@@ -1,116 +1,16 @@
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { TFile } from "obsidian";
 import type ClaudeConnectorPlugin from "../main";
-import { McpTool, ToolCallResult, TextContent } from "../types";
 
-export const VAULT_TOOLS: McpTool[] = [
-	{
-		name: "list_notes",
-		description:
-			"List notes in the Obsidian vault, optionally filtered by folder path.",
-		inputSchema: {
-			type: "object",
-			properties: {
-				folder: {
-					type: "string",
-					description:
-						'Optional folder path to filter by (e.g. "Projects" or "Daily Notes").',
-				},
-				limit: {
-					type: "number",
-					description: "Maximum number of notes to return (default: 50).",
-				},
-			},
-		},
-	},
-	{
-		name: "read_note",
-		description: "Read the full Markdown contents of a note by its vault path.",
-		inputSchema: {
-			type: "object",
-			properties: {
-				path: {
-					type: "string",
-					description:
-						'Path to the note relative to the vault root (e.g. "Projects/My Project.md").',
-				},
-			},
-			required: ["path"],
-		},
-	},
-	{
-		name: "search_notes",
-		description:
-			"Search for notes whose title or content contains a query string.",
-		inputSchema: {
-			type: "object",
-			properties: {
-				query: {
-					type: "string",
-					description: "Text to search for.",
-				},
-				search_content: {
-					type: "boolean",
-					description:
-						"Also search inside note contents (slower). Default: false.",
-				},
-			},
-			required: ["query"],
-		},
-	},
-	{
-		name: "create_note",
-		description: "Create a new Markdown note in the vault.",
-		inputSchema: {
-			type: "object",
-			properties: {
-				path: {
-					type: "string",
-					description:
-						'Vault-relative path for the new note (e.g. "Ideas/Brainstorm.md"). The .md extension is added automatically if omitted.',
-				},
-				content: {
-					type: "string",
-					description: "Markdown content for the new note.",
-				},
-			},
-			required: ["path", "content"],
-		},
-	},
-	{
-		name: "update_note",
-		description: "Update or append/prepend content to an existing note.",
-		inputSchema: {
-			type: "object",
-			properties: {
-				path: {
-					type: "string",
-					description: "Vault-relative path to the note.",
-				},
-				content: {
-					type: "string",
-					description: "New content (or the text to append/prepend).",
-				},
-				mode: {
-					type: "string",
-					enum: ["overwrite", "append", "prepend"],
-					description:
-						'How to apply the content: "overwrite" (default), "append", or "prepend".',
-				},
-			},
-			required: ["path", "content"],
-		},
-	},
-];
-
-function text(t: string): TextContent {
+function text(t: string): { type: "text"; text: string } {
 	return { type: "text", text: t };
 }
 
-function ok(t: string): ToolCallResult {
+function ok(t: string): CallToolResult {
 	return { content: [text(t)] };
 }
 
-function err(t: string): ToolCallResult {
+function err(t: string): CallToolResult {
 	return { content: [text(t)], isError: true };
 }
 
@@ -118,7 +18,7 @@ export async function executeTool(
 	name: string,
 	args: Record<string, unknown>,
 	plugin: ClaudeConnectorPlugin
-): Promise<ToolCallResult> {
+): Promise<CallToolResult> {
 	const vault = plugin.app.vault;
 
 	switch (name) {
@@ -128,8 +28,10 @@ export async function executeTool(
 			let files = vault.getMarkdownFiles();
 
 			if (folder) {
-				const prefix = folder.endsWith("/") ? folder : `${folder}/`;
-				files = files.filter((f) => f.path.startsWith(prefix));
+				const normalized = folder.endsWith("/") ? folder : `${folder}/`;
+				files = files.filter(
+					(f) => f.path.startsWith(normalized) || f.path.startsWith(`${folder}/`)
+				);
 			}
 
 			files = files.slice(0, limit);

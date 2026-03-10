@@ -1,23 +1,22 @@
-import * as http from "http";
+/* eslint-disable @typescript-eslint/no-deprecated -- SSEServerTransport is intentional: MCP 2024-11-05 SSE protocol required for Claude client compatibility */
+import * as http from "node:http";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import type ClaudeConnectorPlugin from "../main";
-import { JsonRpcRequest, SseSession } from "../types";
-import { handleMcpRequest } from "./handlers";
-import { SessionManager } from "./session-manager";
+import { createMcpServer } from "./mcp-server-factory";
 
 /**
  * Standalone HTTP MCP server (HTTP+SSE transport, MCP spec 2024-11-05).
  *
  * Endpoints:
- *   GET  /sse           – open an SSE stream; returns an `endpoint` event
+ *   GET  /sse           – open an SSE stream; the SDK sends an `endpoint` event
  *                         carrying the POST URL for that session.
- *   POST /messages      – send a JSON-RPC request; response is sent back
- *                         via the SSE stream and 202 is returned immediately.
+ *   POST /messages      – send a JSON-RPC request; delegated to SSEServerTransport.
  *
  * Bound to 127.0.0.1 only; never accessible from outside the machine.
  */
 export class StandaloneServer {
 	private server: http.Server | null = null;
-	private readonly sessions = new SessionManager();
+	private readonly transports = new Map<string, SSEServerTransport>();
 	private readonly plugin: ClaudeConnectorPlugin;
 	private readonly port: number;
 	private readonly authToken: string;
@@ -45,7 +44,10 @@ export class StandaloneServer {
 	}
 
 	stop(): Promise<void> {
-		this.sessions.closeAll();
+		for (const transport of this.transports.values()) {
+			void transport.close();
+		}
+		this.transports.clear();
 		return new Promise((resolve) => {
 			if (this.server) {
 				this.server.close(() => resolve());
@@ -83,7 +85,7 @@ export class StandaloneServer {
 		const url = new URL(req.url ?? "/", `http://127.0.0.1:${this.port}`);
 
 		if (url.pathname === "/sse" && req.method === "GET") {
-			this.handleSse(req, res);
+			void this.handleSse(res);
 		} else if (url.pathname === "/messages" && req.method === "POST") {
 			const sessionId = url.searchParams.get("sessionId") ?? "";
 			void this.handleMessages(req, res, sessionId);
@@ -95,59 +97,17 @@ export class StandaloneServer {
 
 	// ── SSE endpoint ───────────────────────────────────────────────────────
 
-	private handleSse(
-		req: http.IncomingMessage,
-		res: http.ServerResponse
-	): void {
-		const sessionId = SessionManager.generateId();
+	private async handleSse(res: http.ServerResponse): Promise<void> {
+		const postEndpoint = `http://127.0.0.1:${this.port}/messages`;
+		const transport = new SSEServerTransport(postEndpoint, res);
+		const mcpServer = createMcpServer(this.plugin);
 
-		res.writeHead(200, {
-			"Content-Type": "text/event-stream",
-			"Cache-Control": "no-cache",
-			Connection: "keep-alive",
-		});
-
-		let active = true;
-
-		const session: SseSession = {
-			id: sessionId,
-			write: (data: string) => {
-				if (active && !res.writableEnded) {
-					res.write(data);
-				}
-			},
-			end: () => {
-				active = false;
-				if (!res.writableEnded) {
-					res.end();
-				}
-			},
-			get active() {
-				return active && !res.writableEnded;
-			},
+		this.transports.set(transport.sessionId, transport);
+		transport.onclose = () => {
+			this.transports.delete(transport.sessionId);
 		};
 
-		this.sessions.add(session);
-
-		// Inform client where to POST messages for this session.
-		const postUrl = `http://127.0.0.1:${this.port}/messages?sessionId=${encodeURIComponent(sessionId)}`;
-		res.write(`event: endpoint\ndata: ${JSON.stringify(postUrl)}\n\n`);
-
-		// Keep-alive comment every 30 s.
-		const pingTimer = setInterval(() => {
-			if (!session.active) {
-				clearInterval(pingTimer);
-				this.sessions.remove(sessionId);
-				return;
-			}
-			res.write(": ping\n\n");
-		}, 30_000);
-
-		req.on("close", () => {
-			clearInterval(pingTimer);
-			active = false;
-			this.sessions.remove(sessionId);
-		});
+		await mcpServer.connect(transport);
 	}
 
 	// ── Messages endpoint ──────────────────────────────────────────────────
@@ -157,44 +117,21 @@ export class StandaloneServer {
 		res: http.ServerResponse,
 		sessionId: string
 	): Promise<void> {
-		const session = this.sessions.get(sessionId);
-		if (!session) {
+		const transport = this.transports.get(sessionId);
+		if (!transport) {
 			res.writeHead(400, { "Content-Type": "application/json" });
 			res.end(JSON.stringify({ error: "Invalid or expired sessionId" }));
 			return;
 		}
 
-		let body = "";
-		for await (const chunk of req) {
-			body += chunk;
-		}
-
-		let request: JsonRpcRequest;
-		try {
-			request = JSON.parse(body) as JsonRpcRequest;
-		} catch {
-			res.writeHead(400, { "Content-Type": "application/json" });
-			res.end(JSON.stringify({ error: "Invalid JSON" }));
-			return;
-		}
-
-		const response = await handleMcpRequest(request, this.plugin);
-		if (response !== null) {
-			this.sessions.sendToSession(sessionId, response);
-		}
-
-		res.writeHead(202);
-		res.end();
+		await transport.handlePostMessage(req, res);
 	}
 
 	// ── Helpers ────────────────────────────────────────────────────────────
 
 	private checkAuth(req: http.IncomingMessage): boolean {
 		const header = req.headers["authorization"];
-		return (
-			typeof header === "string" &&
-			header === `Bearer ${this.authToken}`
-		);
+		return typeof header === "string" && header === `Bearer ${this.authToken}`;
 	}
 
 	private setCors(res: http.ServerResponse): void {
