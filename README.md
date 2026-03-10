@@ -12,11 +12,13 @@ during a conversation — without you having to copy-paste anything.
 
 - **MCP server built-in** — the plugin runs a local MCP server that Claude connects to.
 - **Two operating modes**:
-  - **Integrated** (recommended) — registers MCP endpoints on the
+  - **Integrated** (required for Claude) — registers MCP endpoints on the
     [obsidian-local-rest-api](https://github.com/coddingtonbear/obsidian-local-rest-api) plugin
-    if it is installed, inheriting its HTTPS setup and API key.
+    if it is installed, inheriting its HTTPS setup and API key. Claude custom connectors
+    require HTTPS, so this mode is necessary for connecting to Claude.ai.
   - **Standalone** — runs its own plain-HTTP server (port 3333 by default) when
-    obsidian-local-rest-api is not present.
+    obsidian-local-rest-api is not present. **Claude custom connectors do not accept plain
+    HTTP endpoints.** This mode is provided for development and testing only.
 - **Vault tools exposed to Claude**:
 
   | Tool | Description |
@@ -45,11 +47,12 @@ Copy `main.js`, `manifest.json`, and `styles.css` into:
 
 Reload Obsidian and enable **Claude Connector** under **Settings → Community plugins**.
 
-### 2. (Optional but recommended) Install obsidian-local-rest-api
+### 2. Install obsidian-local-rest-api (required for Claude)
 
 Install the [Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api)
-community plugin. Claude Connector will automatically register its MCP endpoints on the
-Local REST API's HTTPS server, giving you a more secure connection.
+community plugin. Claude custom connectors require an HTTPS endpoint, and the Local REST API
+plugin provides one by generating and managing a trusted local TLS certificate. Claude
+Connector will automatically register its MCP endpoints on that HTTPS server.
 
 ### 3. Enable the MCP server
 

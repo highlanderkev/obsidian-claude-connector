@@ -89,7 +89,7 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 		// ── Standalone server settings ───────────────────────────────────────
 		new Setting(containerEl).setName("Standalone server").setHeading();
 		containerEl.createEl("p", {
-			text: "Used when the local REST API plugin is not installed.",
+			text: "Used when the local REST API plugin is not installed. Note: the standalone server runs over plain HTTP, which Claude custom connectors do not accept. Install the local REST API plugin for the HTTPS connection Claude requires.",
 			cls: "setting-item-description",
 		});
 
@@ -146,6 +146,13 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 					text: "Use these values when adding a custom connector in Claude → settings → integrations.",
 					cls: "setting-item-description",
 				});
+
+				if (info.mode === "Standalone (HTTP)") {
+					infoEl.createEl("p", {
+						text: "⚠ Claude custom connectors require HTTPS. This HTTP endpoint will not be accepted. Install the local REST API plugin to get an HTTPS endpoint.",
+						cls: "setting-item-description mod-warning",
+					});
+				}
 
 				new Setting(infoEl)
 					.setName("SSE endpoint URL")
