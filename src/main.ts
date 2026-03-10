@@ -1,25 +1,24 @@
 import { Notice, Plugin } from "obsidian";
+import { CertManager } from "./mcp/cert-manager";
+import { StandaloneServer } from "./mcp/standalone-server";
+import type { ClaudeConnectorSettings } from "./settings";
 import {
-	ClaudeConnectorSettings,
 	ClaudeConnectorSettingTab,
 	DEFAULT_SETTINGS,
 	generateAuthToken,
 } from "./settings";
-import { StandaloneServer } from "./mcp/standalone-server";
-import { LocalRestApiIntegration } from "./mcp/local-rest-api";
 import { ServerStatusModal } from "./ui/status-modal";
 
 export interface ConnectionInfo {
 	sseUrl: string;
 	bearerToken: string;
-	mode: "Local REST API (HTTPS)" | "Standalone (HTTP)";
+	mode: "HTTPS";
 }
 
 export default class ClaudeConnectorPlugin extends Plugin {
 	settings: ClaudeConnectorSettings;
 
 	private standaloneServer: StandaloneServer | null = null;
-	private localRestApiIntegration: LocalRestApiIntegration | null = null;
 	private statusBarItem: HTMLElement | null = null;
 
 	// ── Lifecycle ────────────────────────────────────────────────────────────
@@ -76,25 +75,6 @@ export default class ClaudeConnectorPlugin extends Plugin {
 		// Settings tab
 		this.addSettingTab(new ClaudeConnectorSettingTab(this.app, this));
 
-		// Listen for the Local REST API loading after us.
-		// The obsidian-local-rest-api plugin fires this workspace event in its
-		// onload() via: this.app.workspace.trigger("obsidian-local-rest-api:loaded")
-		this.registerEvent(
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-			(this.app.workspace as any).on(
-				"obsidian-local-rest-api:loaded",
-				async () => {
-					if (
-						this.settings.enableServer &&
-						this.settings.preferLocalRestApi &&
-						!this.isMcpServerRunning()
-					) {
-						await this.startMcpServer();
-					}
-				}
-			)
-		);
-
 		// Auto-start if the user had the server enabled previously
 		if (this.settings.enableServer) {
 			await this.startMcpServer();
@@ -110,31 +90,31 @@ export default class ClaudeConnectorPlugin extends Plugin {
 	async startMcpServer(): Promise<void> {
 		await this.stopMcpServer();
 
-		// Try Local REST API integration first (if the user prefers it)
-		if (this.settings.preferLocalRestApi) {
-			const integration = new LocalRestApiIntegration(this);
-			if (integration.register()) {
-				this.localRestApiIntegration = integration;
-				this.updateStatusBar();
+		// Ensure a TLS certificate exists (generated on first start).
+		const bundle = await new CertManager(this).ensureBundle().catch(
+			(e: unknown) => {
+				const msg = e instanceof Error ? e.message : String(e);
 				new Notice(
-					`Claude Connector: MCP endpoints registered on Local REST API (HTTPS port ${integration.port}).`
+					`Claude Connector: failed to generate TLS certificate — ${msg}`
 				);
-				return;
+				return null;
 			}
-		}
+		);
+		if (!bundle) return;
 
-		// Fall back to standalone HTTP server
 		const server = new StandaloneServer(
 			this,
+			this.settings.standaloneHost,
 			this.settings.standalonePort,
-			this.settings.standaloneAuthToken
+			this.settings.standaloneAuthToken,
+			bundle
 		);
 		try {
 			await server.start();
 			this.standaloneServer = server;
 			this.updateStatusBar();
 			new Notice(
-				`Claude Connector: standalone MCP server started on port ${this.settings.standalonePort}.`
+				`Claude Connector: HTTPS MCP server started on port ${this.settings.standalonePort}.`
 			);
 		} catch (e) {
 			const msg = e instanceof Error ? e.message : String(e);
@@ -143,10 +123,6 @@ export default class ClaudeConnectorPlugin extends Plugin {
 	}
 
 	async stopMcpServer(): Promise<void> {
-		if (this.localRestApiIntegration) {
-			this.localRestApiIntegration.unregister();
-			this.localRestApiIntegration = null;
-		}
 		if (this.standaloneServer) {
 			await this.standaloneServer.stop();
 			this.standaloneServer = null;
@@ -155,10 +131,7 @@ export default class ClaudeConnectorPlugin extends Plugin {
 	}
 
 	isMcpServerRunning(): boolean {
-		return (
-			this.localRestApiIntegration?.active === true ||
-			this.standaloneServer?.isRunning === true
-		);
+		return this.standaloneServer?.isRunning === true;
 	}
 
 	/**
@@ -166,19 +139,11 @@ export default class ClaudeConnectorPlugin extends Plugin {
 	 * or null if the server is not running.
 	 */
 	getConnectionInfo(): ConnectionInfo | null {
-		if (this.localRestApiIntegration?.active) {
-			const port = this.localRestApiIntegration.port;
-			return {
-				sseUrl: `https://127.0.0.1:${port}/mcp/sse`,
-				bearerToken: this.localRestApiIntegration.apiKey,
-				mode: "Local REST API (HTTPS)",
-			};
-		}
 		if (this.standaloneServer?.isRunning) {
 			return {
-				sseUrl: `http://127.0.0.1:${this.settings.standalonePort}/sse`,
+				sseUrl: `https://${this.settings.standaloneHost}:${this.settings.standalonePort}/mcp`,
 				bearerToken: this.settings.standaloneAuthToken,
-				mode: "Standalone (HTTP)",
+				mode: "HTTPS",
 			};
 		}
 		return null;
@@ -187,11 +152,10 @@ export default class ClaudeConnectorPlugin extends Plugin {
 	// ── Persistence ──────────────────────────────────────────────────────────
 
 	async loadSettings() {
-		this.settings = Object.assign(
-			{},
-			DEFAULT_SETTINGS,
-			(await this.loadData()) as Partial<ClaudeConnectorSettings>
-		);
+		this.settings = {
+			...DEFAULT_SETTINGS,
+			...((await this.loadData()) as Partial<ClaudeConnectorSettings>),
+		};
 	}
 
 	async saveSettings() {
@@ -202,13 +166,9 @@ export default class ClaudeConnectorPlugin extends Plugin {
 
 	private updateStatusBar(): void {
 		if (!this.statusBarItem) return;
-		if (this.localRestApiIntegration?.active) {
+		if (this.standaloneServer?.isRunning) {
 			this.statusBarItem.setText(
-				`Claude: HTTPS ${this.localRestApiIntegration.port}`
-			);
-		} else if (this.standaloneServer?.isRunning) {
-			this.statusBarItem.setText(
-				`Claude: HTTP ${this.settings.standalonePort}`
+				`Claude: HTTPS ${this.settings.standaloneHost}:${this.settings.standalonePort}`
 			);
 		} else {
 			this.statusBarItem.setText("Claude: stopped");

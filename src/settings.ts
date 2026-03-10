@@ -1,25 +1,32 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { CertManager } from "./mcp/cert-manager";
 import type ClaudeConnectorPlugin from "./main";
 
 export interface ClaudeConnectorSettings {
-	/** Port for the standalone HTTP server (used when Local REST API is absent). */
+	/** Hostname or IP the server binds to and advertises in the SSE endpoint URL. */
+	standaloneHost: string;
+	/** Port for the built-in HTTPS MCP server. */
 	standalonePort: number;
-	/** Bearer token for the standalone HTTP server. Auto-generated on first load. */
+	/** Bearer token Claude must supply. Auto-generated on first load. */
 	standaloneAuthToken: string;
-	/** Whether to run a server at all. */
+	/** Whether to run the server at all. */
 	enableServer: boolean;
-	/**
-	 * When true, try to register MCP endpoints on obsidian-local-rest-api if it
-	 * is installed.  Falls back to the standalone server otherwise.
-	 */
-	preferLocalRestApi: boolean;
+	/** PEM-encoded self-signed TLS certificate. */
+	tlsCert: string;
+	/** PEM-encoded private key for the TLS certificate. */
+	tlsKey: string;
 }
 
 export const DEFAULT_SETTINGS: ClaudeConnectorSettings = {
-	standalonePort: 3333,
+	standaloneHost: "127.0.0.1",
+	standalonePort: 27124,
 	standaloneAuthToken: "",
 	enableServer: false,
-	preferLocalRestApi: true,
+	tlsCert: "",
+	tlsKey: "",
 };
 
 /** Generates a cryptographically-random 32-character alphanumeric token. */
@@ -46,16 +53,14 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		containerEl.createEl("p", {
-			text: "Exposes your Obsidian vault as an MCP server so Claude can read, search, and edit notes via custom connectors.",
+			text: "Exposes your Obsidian vault as an MCP server so Claude can read, search, and edit notes. Runs a built-in HTTPS server — no external plugins required.",
 			cls: "setting-item-description",
 		});
 
 		// ── Enable / disable ────────────────────────────────────────────────
 		new Setting(containerEl)
 			.setName("Enable MCP server")
-			.setDesc(
-				"Start the local MCP server that Claude connects to."
-			)
+			.setDesc("Start the local HTTPS MCP server that Claude connects to.")
 			.addToggle((toggle) =>
 				toggle
 					.setValue(this.plugin.settings.enableServer)
@@ -71,38 +76,37 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 					})
 			);
 
-		// ── Local REST API preference ────────────────────────────────────────
+		// ── Server settings ──────────────────────────────────────────────────
+		new Setting(containerEl).setName("Server").setHeading();
+
 		new Setting(containerEl)
-			.setName("Prefer local REST API integration")
+			.setName("Host")
 			.setDesc(
-				"When enabled, registers MCP endpoints on the local REST API plugin if it is installed. Falls back to the standalone server otherwise."
+				"Hostname or IP address the server binds to and advertises in the SSE endpoint URL. Use 127.0.0.1 (default) to restrict to localhost only."
 			)
-			.addToggle((toggle) =>
-				toggle
-					.setValue(this.plugin.settings.preferLocalRestApi)
+			.addText((text) =>
+				text
+					.setPlaceholder("127.0.0.1")
+					.setValue(this.plugin.settings.standaloneHost)
 					.onChange(async (value) => {
-						this.plugin.settings.preferLocalRestApi = value;
-						await this.plugin.saveSettings();
+						const trimmed = value.trim();
+						if (trimmed) {
+							this.plugin.settings.standaloneHost = trimmed;
+							await this.plugin.saveSettings();
+						}
 					})
 			);
 
-		// ── Standalone server settings ───────────────────────────────────────
-		new Setting(containerEl).setName("Standalone server").setHeading();
-		containerEl.createEl("p", {
-			text: "Used when the local REST API plugin is not installed. Note: the standalone server runs over plain HTTP, which Claude custom connectors do not accept. Install the local REST API plugin for the HTTPS connection Claude requires.",
-			cls: "setting-item-description",
-		});
-
 		new Setting(containerEl)
 			.setName("Port")
-			.setDesc("Local port for the standalone MCP server (default: 3333).")
+			.setDesc("Local port for the HTTPS MCP server (default: 27124).")
 			.addText((text) =>
 				text
-					.setPlaceholder("3333")
+					.setPlaceholder("27124")
 					.setValue(String(this.plugin.settings.standalonePort))
 					.onChange(async (value) => {
-						const port = parseInt(value, 10);
-						if (!isNaN(port) && port > 0 && port < 65536) {
+						const port = Number.parseInt(value, 10);
+						if (!Number.isNaN(port) && port > 0 && port < 65536) {
 							this.plugin.settings.standalonePort = port;
 							await this.plugin.saveSettings();
 						}
@@ -112,7 +116,7 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("Auth token")
 			.setDesc(
-				"Bearer token Claude must supply to authenticate with the standalone server. Keep this secret."
+				"Bearer token Claude must supply to authenticate. Keep this secret."
 			)
 			.addText((text) =>
 				text
@@ -128,8 +132,75 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 					this.plugin.settings.standaloneAuthToken = generateAuthToken();
 					await this.plugin.saveSettings();
 					new Notice(
-						"New auth token generated — update your Claude Connector."
+						"New auth token generated — update your Claude connector."
 					);
+					this.display();
+				})
+			);
+
+		// ── Certificate management ───────────────────────────────────────────
+		new Setting(containerEl).setName("TLS certificate").setHeading();
+
+		const hasCert = Boolean(this.plugin.settings.tlsCert);
+		containerEl.createEl("p", {
+			text: hasCert
+				? "A self-signed certificate has been generated and is stored securely in your plugin data. Claude custom connectors require HTTPS — this certificate enables that."
+				: "No certificate yet. Enable the server to auto-generate one, or click Regenerate below.",
+			cls: "setting-item-description",
+		});
+
+		containerEl.createEl("p", {
+			text: "For Claude to connect, your system must trust this certificate. Click \"Open Certificate\" to open it in your system's certificate manager, then follow your OS prompts to mark it as trusted.",
+			cls: "setting-item-description",
+		});
+
+		containerEl.createEl("details", {}, (details) => {
+			details.createEl("summary", { text: "Trust instructions by OS" });
+			const list = details.createEl("ul");
+			list.createEl("li", {
+				text: "macOS: In Keychain Access, double-click the certificate → expand Trust → set \"When using this certificate\" to Always Trust.",
+			});
+			list.createEl("li", {
+				text: "Windows: In the import wizard, choose \"Trusted Root Certification Authorities\" as the store.",
+			});
+			list.createEl("li", {
+				text: "Linux (Chrome/Chromium): go to Settings → Privacy → Manage certificates → Authorities → Import.",
+			});
+		});
+
+		new Setting(containerEl)
+			.setName("Certificate actions")
+			.addButton((btn) =>
+				btn
+					.setButtonText("Open Certificate")
+					.setDisabled(!hasCert)
+					.onClick(async () => {
+						const certPath = path.join(
+							os.tmpdir(),
+							"obsidian-claude-connector.crt"
+						);
+						fs.writeFileSync(
+							certPath,
+							this.plugin.settings.tlsCert
+						);
+						// eslint-disable-next-line @typescript-eslint/no-require-imports
+						const { shell } = require("electron") as {
+							shell: { openPath: (p: string) => Promise<string> };
+						};
+						await shell.openPath(certPath);
+					})
+			)
+			.addButton((btn) =>
+				btn.setButtonText("Regenerate Certificate").onClick(async () => {
+					await new CertManager(this.plugin).generateAndSave();
+					new Notice(
+						"New TLS certificate generated — you will need to trust it again."
+					);
+					// Restart the server so it picks up the new cert.
+					if (this.plugin.isMcpServerRunning()) {
+						await this.plugin.stopMcpServer();
+						await this.plugin.startMcpServer();
+					}
 					this.display();
 				})
 			);
@@ -141,18 +212,13 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 				const infoEl = containerEl.createDiv({
 					cls: "claude-connector-connection-info",
 				});
-				new Setting(infoEl).setName("Connection info for Claude").setHeading();
+				new Setting(infoEl)
+					.setName("Connection info for Claude")
+					.setHeading();
 				infoEl.createEl("p", {
-					text: "Use these values when adding a custom connector in Claude → settings → integrations.",
+					text: "Use these values when adding a custom connector in Claude → Settings → Integrations.",
 					cls: "setting-item-description",
 				});
-
-				if (info.mode === "Standalone (HTTP)") {
-					infoEl.createEl("p", {
-						text: "⚠ Claude custom connectors require HTTPS. This HTTP endpoint will not be accepted. Install the local REST API plugin to get an HTTPS endpoint.",
-						cls: "setting-item-description mod-warning",
-					});
-				}
 
 				new Setting(infoEl)
 					.setName("SSE endpoint URL")
@@ -168,7 +234,7 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 
 				new Setting(infoEl)
 					.setName("Bearer token")
-					.setDesc("Include as the authorization header value.")
+					.setDesc("Include as the Authorization header value.")
 					.addText((text) =>
 						text.setValue(info.bearerToken).setDisabled(true)
 					)
@@ -178,11 +244,6 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 							new Notice("Copied bearer token");
 						})
 					);
-
-				infoEl.createEl("p", {
-					text: `Mode: ${info.mode}`,
-					cls: "setting-item-description",
-				});
 			}
 		}
 	}

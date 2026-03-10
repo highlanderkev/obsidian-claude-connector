@@ -1,45 +1,46 @@
-/* eslint-disable @typescript-eslint/no-deprecated -- SSEServerTransport is intentional: MCP 2024-11-05 SSE protocol required for Claude client compatibility */
-import * as http from "node:http";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { randomUUID } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import * as https from "node:https";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type ClaudeConnectorPlugin from "../main";
+import type { TlsCertBundle } from "./cert-manager";
 import { createMcpServer } from "./mcp-server-factory";
 
 /**
- * Standalone HTTP MCP server (HTTP+SSE transport, MCP spec 2024-11-05).
+ * Built-in HTTPS MCP server (Streamable HTTP transport, current MCP spec).
  *
- * Endpoints:
- *   GET  /sse           – open an SSE stream; the SDK sends an `endpoint` event
- *                         carrying the POST URL for that session.
- *   POST /messages      – send a JSON-RPC request; delegated to SSEServerTransport.
+ * A single endpoint handles the full MCP lifecycle:
+ *   POST /mcp  – initialise a new session or send JSON-RPC messages.
+ *   GET  /mcp  – open a server-sent-event stream for a session.
+ *   DELETE /mcp – close a session.
  *
- * Bound to 127.0.0.1 only; never accessible from outside the machine.
+ * Binds to the configured host (default: 127.0.0.1).
  */
 export class StandaloneServer {
-	private server: http.Server | null = null;
-	private readonly transports = new Map<string, SSEServerTransport>();
-	private readonly plugin: ClaudeConnectorPlugin;
-	private readonly port: number;
-	private readonly authToken: string;
+	private server: https.Server | null = null;
+	private readonly transports = new Map<
+		string,
+		StreamableHTTPServerTransport
+	>();
 
 	constructor(
-		plugin: ClaudeConnectorPlugin,
-		port: number,
-		authToken: string
-	) {
-		this.plugin = plugin;
-		this.port = port;
-		this.authToken = authToken;
-	}
+		private readonly plugin: ClaudeConnectorPlugin,
+		private readonly host: string,
+		private readonly port: number,
+		private readonly authToken: string,
+		private readonly certBundle: TlsCertBundle
+	) {}
 
 	// ── Lifecycle ──────────────────────────────────────────────────────────
 
 	start(): Promise<void> {
 		return new Promise((resolve, reject) => {
-			this.server = http.createServer((req, res) =>
-				this.handleRequest(req, res)
+			this.server = https.createServer(
+				{ cert: this.certBundle.cert, key: this.certBundle.key },
+				(req, res) => this.handleRequest(req, res)
 			);
 			this.server.on("error", reject);
-			this.server.listen(this.port, "127.0.0.1", () => resolve());
+			this.server.listen(this.port, this.host, () => resolve());
 		});
 	}
 
@@ -65,8 +66,8 @@ export class StandaloneServer {
 	// ── Request routing ────────────────────────────────────────────────────
 
 	private handleRequest(
-		req: http.IncomingMessage,
-		res: http.ServerResponse
+		req: IncomingMessage,
+		res: ServerResponse
 	): void {
 		this.setCors(res);
 
@@ -82,64 +83,71 @@ export class StandaloneServer {
 			return;
 		}
 
-		const url = new URL(req.url ?? "/", `http://127.0.0.1:${this.port}`);
+		const url = new URL(
+			req.url ?? "/",
+			`https://${this.host}:${this.port}`
+		);
 
-		if (url.pathname === "/sse" && req.method === "GET") {
-			void this.handleSse(res);
-		} else if (url.pathname === "/messages" && req.method === "POST") {
-			const sessionId = url.searchParams.get("sessionId") ?? "";
-			void this.handleMessages(req, res, sessionId);
+		if (url.pathname === "/mcp") {
+			void this.handleMcp(req, res);
 		} else {
 			res.writeHead(404, { "Content-Type": "application/json" });
 			res.end(JSON.stringify({ error: "Not found" }));
 		}
 	}
 
-	// ── SSE endpoint ───────────────────────────────────────────────────────
+	// ── MCP endpoint ───────────────────────────────────────────────────────
 
-	private async handleSse(res: http.ServerResponse): Promise<void> {
-		const postEndpoint = `http://127.0.0.1:${this.port}/messages`;
-		const transport = new SSEServerTransport(postEndpoint, res);
-		const mcpServer = createMcpServer(this.plugin);
-
-		this.transports.set(transport.sessionId, transport);
-		transport.onclose = () => {
-			this.transports.delete(transport.sessionId);
-		};
-
-		await mcpServer.connect(transport);
-	}
-
-	// ── Messages endpoint ──────────────────────────────────────────────────
-
-	private async handleMessages(
-		req: http.IncomingMessage,
-		res: http.ServerResponse,
-		sessionId: string
+	private async handleMcp(
+		req: IncomingMessage,
+		res: ServerResponse
 	): Promise<void> {
-		const transport = this.transports.get(sessionId);
-		if (!transport) {
-			res.writeHead(400, { "Content-Type": "application/json" });
-			res.end(JSON.stringify({ error: "Invalid or expired sessionId" }));
+		const sessionId = req.headers["mcp-session-id"];
+
+		// Route to an existing session.
+		if (typeof sessionId === "string") {
+			const existing = this.transports.get(sessionId);
+			if (!existing) {
+				res.writeHead(404, { "Content-Type": "application/json" });
+				res.end(JSON.stringify({ error: "Session not found" }));
+				return;
+			}
+			await existing.handleRequest(req, res);
 			return;
 		}
 
-		await transport.handlePostMessage(req, res);
+		// No session ID — create a new transport, connect the MCP server, then handle.
+		const transport = new StreamableHTTPServerTransport({
+			sessionIdGenerator: () => randomUUID(),
+			onsessioninitialized: (id) => {
+				this.transports.set(id, transport);
+			},
+		});
+
+		transport.onclose = () => {
+			if (transport.sessionId) {
+				this.transports.delete(transport.sessionId);
+			}
+		};
+
+		const mcpServer = createMcpServer(this.plugin);
+		await mcpServer.connect(transport);
+		await transport.handleRequest(req, res);
 	}
 
 	// ── Helpers ────────────────────────────────────────────────────────────
 
-	private checkAuth(req: http.IncomingMessage): boolean {
+	private checkAuth(req: IncomingMessage): boolean {
 		const header = req.headers["authorization"];
 		return typeof header === "string" && header === `Bearer ${this.authToken}`;
 	}
 
-	private setCors(res: http.ServerResponse): void {
+	private setCors(res: ServerResponse): void {
 		res.setHeader("Access-Control-Allow-Origin", "*");
-		res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+		res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
 		res.setHeader(
 			"Access-Control-Allow-Headers",
-			"Content-Type, Authorization"
+			"Content-Type, Authorization, mcp-session-id"
 		);
 	}
 }

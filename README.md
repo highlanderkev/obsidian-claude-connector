@@ -10,24 +10,18 @@ during a conversation — without you having to copy-paste anything.
 
 ## Features
 
-- **MCP server built-in** — the plugin runs a local MCP server that Claude connects to.
-- **Two operating modes**:
-  - **Integrated** (required for Claude) — registers MCP endpoints on the
-    [obsidian-local-rest-api](https://github.com/coddingtonbear/obsidian-local-rest-api) plugin
-    if it is installed, inheriting its HTTPS setup and API key. Claude custom connectors
-    require HTTPS, so this mode is necessary for connecting to Claude.ai.
-  - **Standalone** — runs its own plain-HTTP server (port 3333 by default) when
-    obsidian-local-rest-api is not present. **Claude custom connectors do not accept plain
-    HTTP endpoints.** This mode is provided for development and testing only.
+- **MCP server built-in** — the plugin runs a local HTTPS MCP server that Claude connects to.
+- **No external plugins required** — generates and manages its own self-signed TLS
+  certificate so Claude custom connectors can connect over HTTPS without any additional setup.
 - **Vault tools exposed to Claude**:
 
-  | Tool | Description |
-  |------|-------------|
-  | `list_notes` | List notes, optionally filtered by folder |
-  | `read_note` | Read the full content of a note |
-  | `search_notes` | Search notes by title or content |
-  | `create_note` | Create a new note |
-  | `update_note` | Overwrite, append to, or prepend to a note |
+  |Tool|Description|
+  |----|-----------|
+  |`list_notes`|List notes, optionally filtered by folder|
+  |`read_note`|Read the full content of a note|
+  |`search_notes`|Search notes by title or content|
+  |`create_note`|Create a new note|
+  |`update_note`|Overwrite, append to, or prepend to a note|
 
 - **Vault resources** — every Markdown file is also exposed as an MCP resource with URI
   `obsidian://note/<path>`.
@@ -41,26 +35,38 @@ during a conversation — without you having to copy-paste anything.
 
 Copy `main.js`, `manifest.json`, and `styles.css` into:
 
-```
+```text
 <YourVault>/.obsidian/plugins/obsidian-claude-connector/
 ```
 
 Reload Obsidian and enable **Claude Connector** under **Settings → Community plugins**.
 
-### 2. Install obsidian-local-rest-api (required for Claude)
-
-Install the [Local REST API](https://github.com/coddingtonbear/obsidian-local-rest-api)
-community plugin. Claude custom connectors require an HTTPS endpoint, and the Local REST API
-plugin provides one by generating and managing a trusted local TLS certificate. Claude
-Connector will automatically register its MCP endpoints on that HTTPS server.
-
-### 3. Enable the MCP server
+### 2. Enable the MCP server
 
 Go to **Settings → Claude Connector** and toggle **Enable MCP server** on.
 
-The **Connection info** section will appear with:
+The plugin will automatically generate a self-signed TLS certificate and start a local
+HTTPS server. The **Connection info** section will appear with:
+
 - **SSE endpoint URL** — paste this into Claude's connector setup.
 - **Bearer token** — the API key Claude must supply.
+
+### 3. Trust the TLS certificate
+
+Because the plugin uses a self-signed certificate, your system must trust it before
+Claude can connect.
+
+1. Click **Open Certificate** in the **TLS certificate** section of the plugin settings.
+2. Your OS certificate manager will open — follow the prompts to add and trust the certificate:
+
+   |OS|Steps|
+   |--|-----|
+   |**macOS**|In Keychain Access, double-click the certificate → expand **Trust** → set **"When using this certificate"** to **Always Trust**|
+   |**Windows**|In the import wizard, choose **Trusted Root Certification Authorities** as the certificate store|
+   |**Linux (Chrome/Chromium)**|Settings → Privacy → Manage certificates → Authorities → Import|
+
+> **One-time step.** The certificate is stored in the plugin's data and reused across
+> Obsidian restarts. You only need to trust it again if you click **Regenerate Certificate**.
 
 ### 4. Add a Custom Connector in Claude
 
@@ -74,12 +80,13 @@ The **Connection info** section will appear with:
 
 ## Configuration
 
-| Setting | Description | Default |
-|---------|-------------|---------|
-| Enable MCP server | Start/stop the server | off |
-| Prefer Local REST API | Use obsidian-local-rest-api when available | on |
-| Port | Standalone server port | 3333 |
-| Auth token | Bearer token for standalone server (auto-generated) | — |
+|Setting|Description|Default|
+|-------|-----------|-------|
+|Enable MCP server|Start/stop the HTTPS server|off|
+|Port|Server port|27124|
+|Auth token|Bearer token Claude must supply (auto-generated)|—|
+|Open Certificate|Open the TLS cert in your OS certificate manager|—|
+|Regenerate Certificate|Generate a new cert (requires re-trusting)|—|
 
 ---
 
@@ -87,13 +94,12 @@ The **Connection info** section will appear with:
 
 - The server only binds to `127.0.0.1` (localhost) — it is **never** accessible from
   outside your machine.
-- When using the Local REST API integration, authentication is handled by the Local REST
-  API's own API key and HTTPS certificate.
-- In standalone mode, all requests must include the correct `Authorization: Bearer <token>`
-  header. The token is auto-generated on first install; use **Regenerate** if you need to
-  rotate it.
-- No vault data is sent anywhere by the plugin itself. Data flows only between Obsidian and
-  whichever Claude client connects to the local server.
+- The self-signed TLS certificate is generated locally and stored in your plugin's data
+  file. The private key never leaves your machine.
+- All requests must include the correct `Authorization: Bearer <token>` header. The token
+  is auto-generated on first install; use **Regenerate** if you need to rotate it.
+- No vault data is sent anywhere by the plugin itself. Data flows only between Obsidian
+  and whichever Claude client connects to the local server.
 
 ---
 
@@ -113,5 +119,4 @@ npm run lint    # ESLint
 - [MCP specification](https://modelcontextprotocol.io/specification/2024-11-05/basic/transports)
 - [Claude Custom Connectors (remote MCP)](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
 - [Building custom connectors via remote MCP](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers)
-- [obsidian-local-rest-api](https://github.com/coddingtonbear/obsidian-local-rest-api)
 - [Obsidian API docs](https://docs.obsidian.md)
