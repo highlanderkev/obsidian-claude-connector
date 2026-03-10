@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "obsidian-claude-connector",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Obsidian plugin that connects your vault to Claude via Model Context Protocol (MCP) custom connectors",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {

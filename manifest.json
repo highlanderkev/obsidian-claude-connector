@@ -1,11 +1,10 @@
 {
-	"id": "sample-plugin",
-	"name": "Sample Plugin",
+	"id": "obsidian-claude-connector",
+	"name": "Claude Connector",
 	"version": "1.0.0",
-	"minAppVersion": "0.15.0",
-	"description": "Demonstrates some of the capabilities of the Obsidian API.",
-	"author": "Obsidian",
-	"authorUrl": "https://obsidian.md",
-	"fundingUrl": "https://obsidian.md/pricing",
-	"isDesktopOnly": false
+	"minAppVersion": "1.4.0",
+	"description": "Connect your Obsidian vault to Claude via Model Context Protocol (MCP) custom connectors. Integrates with obsidian-local-rest-api when available.",
+	"author": "highlanderkev",
+	"authorUrl": "https://github.com/highlanderkev/obsidian-claude-connector",
+	"isDesktopOnly": true
 }

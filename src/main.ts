@@ -1,99 +1,215 @@
-import {App, Editor, MarkdownView, Modal, Notice, Plugin} from 'obsidian';
-import {DEFAULT_SETTINGS, MyPluginSettings, SampleSettingTab} from "./settings";
+import { Notice, Plugin } from "obsidian";
+import {
+	ClaudeConnectorSettings,
+	ClaudeConnectorSettingTab,
+	DEFAULT_SETTINGS,
+	generateAuthToken,
+} from "./settings";
+import { StandaloneServer } from "./mcp/standalone-server";
+import { LocalRestApiIntegration } from "./mcp/local-rest-api";
+import { ServerStatusModal } from "./ui/status-modal";
 
-// Remember to rename these classes and interfaces!
+export interface ConnectionInfo {
+	sseUrl: string;
+	bearerToken: string;
+	mode: "Local REST API (HTTPS)" | "Standalone (HTTP)";
+}
 
-export default class MyPlugin extends Plugin {
-	settings: MyPluginSettings;
+export default class ClaudeConnectorPlugin extends Plugin {
+	settings: ClaudeConnectorSettings;
+
+	private standaloneServer: StandaloneServer | null = null;
+	private localRestApiIntegration: LocalRestApiIntegration | null = null;
+	private statusBarItem: HTMLElement | null = null;
+
+	// ── Lifecycle ────────────────────────────────────────────────────────────
 
 	async onload() {
 		await this.loadSettings();
 
-		// This creates an icon in the left ribbon.
-		this.addRibbonIcon('dice', 'Sample', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+		// Ensure a token exists on first install.
+		if (!this.settings.standaloneAuthToken) {
+			this.settings.standaloneAuthToken = generateAuthToken();
+			await this.saveSettings();
+		}
+
+		// Status bar
+		this.statusBarItem = this.addStatusBarItem();
+		this.updateStatusBar();
+
+		// Ribbon icon — opens the status modal
+		this.addRibbonIcon("server", "Claude Connector", () => {
+			new ServerStatusModal(this.app, this).open();
 		});
 
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('Status bar text');
-
-		// This adds a simple command that can be triggered anywhere
+		// Commands
 		this.addCommand({
-			id: 'open-modal-simple',
-			name: 'Open modal (simple)',
-			callback: () => {
-				new SampleModal(this.app).open();
-			}
+			id: "show-server-status",
+			name: "Show server status",
+			callback: () => new ServerStatusModal(this.app, this).open(),
 		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'replace-selected',
-			name: 'Replace selected content',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				editor.replaceSelection('Sample editor command');
-			}
-		});
-		// This adds a complex command that can check whether the current state of the app allows execution of the command
-		this.addCommand({
-			id: 'open-modal-complex',
-			name: 'Open modal (complex)',
-			checkCallback: (checking: boolean) => {
-				// Conditions to check
-				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
-				if (markdownView) {
-					// If checking is true, we're simply "checking" if the command can be run.
-					// If checking is false, then we want to actually perform the operation.
-					if (!checking) {
-						new SampleModal(this.app).open();
-					}
 
-					// This command will only show up in Command Palette when the check function returns true
-					return true;
+		this.addCommand({
+			id: "start-server",
+			name: "Start MCP server",
+			callback: async () => {
+				if (this.isMcpServerRunning()) {
+					new Notice("Claude Connector: server is already running.");
+					return;
 				}
-				return false;
+				await this.startMcpServer();
+			},
+		});
+
+		this.addCommand({
+			id: "stop-server",
+			name: "Stop MCP server",
+			callback: async () => {
+				if (!this.isMcpServerRunning()) {
+					new Notice("Claude Connector: server is not running.");
+					return;
+				}
+				await this.stopMcpServer();
+			},
+		});
+
+		// Settings tab
+		this.addSettingTab(new ClaudeConnectorSettingTab(this.app, this));
+
+		// Listen for the Local REST API loading after us
+		this.registerEvent(
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
+			(this.app.workspace as any).on(
+				"obsidian-local-rest-api:loaded",
+				async () => {
+					if (
+						this.settings.enableServer &&
+						this.settings.preferLocalRestApi &&
+						!this.isMcpServerRunning()
+					) {
+						await this.startMcpServer();
+					}
+				}
+			)
+		);
+
+		// Auto-start if the user had the server enabled previously
+		if (this.settings.enableServer) {
+			await this.startMcpServer();
+		}
+	}
+
+	onunload(): void {
+		void this.stopMcpServer();
+	}
+
+	// ── Server management ────────────────────────────────────────────────────
+
+	async startMcpServer(): Promise<void> {
+		await this.stopMcpServer();
+
+		// Try Local REST API integration first (if the user prefers it)
+		if (this.settings.preferLocalRestApi) {
+			const integration = new LocalRestApiIntegration(this);
+			if (integration.register()) {
+				this.localRestApiIntegration = integration;
+				this.updateStatusBar();
+				new Notice(
+					`Claude Connector: MCP endpoints registered on Local REST API (HTTPS port ${integration.port}).`
+				);
+				return;
 			}
-		});
+		}
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
-
-		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
-		// Using this function will automatically remove the event listener when this plugin is disabled.
-		this.registerDomEvent(document, 'click', (evt: MouseEvent) => {
-			new Notice("Click");
-		});
-
-		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
-		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-
+		// Fall back to standalone HTTP server
+		const server = new StandaloneServer(
+			this,
+			this.settings.standalonePort,
+			this.settings.standaloneAuthToken
+		);
+		try {
+			await server.start();
+			this.standaloneServer = server;
+			this.updateStatusBar();
+			new Notice(
+				`Claude Connector: standalone MCP server started on port ${this.settings.standalonePort}.`
+			);
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			new Notice(`Claude Connector: failed to start server — ${msg}`);
+		}
 	}
 
-	onunload() {
+	async stopMcpServer(): Promise<void> {
+		if (this.localRestApiIntegration) {
+			this.localRestApiIntegration.unregister();
+			this.localRestApiIntegration = null;
+		}
+		if (this.standaloneServer) {
+			await this.standaloneServer.stop();
+			this.standaloneServer = null;
+		}
+		this.updateStatusBar();
 	}
+
+	isMcpServerRunning(): boolean {
+		return (
+			this.localRestApiIntegration?.active === true ||
+			this.standaloneServer?.isRunning === true
+		);
+	}
+
+	/**
+	 * Returns the URLs and credentials Claude needs to connect,
+	 * or null if the server is not running.
+	 */
+	getConnectionInfo(): ConnectionInfo | null {
+		if (this.localRestApiIntegration?.active) {
+			const port = this.localRestApiIntegration.port;
+			return {
+				sseUrl: `https://127.0.0.1:${port}/mcp/sse`,
+				bearerToken: this.localRestApiIntegration.apiKey,
+				mode: "Local REST API (HTTPS)",
+			};
+		}
+		if (this.standaloneServer?.isRunning) {
+			return {
+				sseUrl: `http://127.0.0.1:${this.settings.standalonePort}/sse`,
+				bearerToken: this.settings.standaloneAuthToken,
+				mode: "Standalone (HTTP)",
+			};
+		}
+		return null;
+	}
+
+	// ── Persistence ──────────────────────────────────────────────────────────
 
 	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() as Partial<MyPluginSettings>);
+		this.settings = Object.assign(
+			{},
+			DEFAULT_SETTINGS,
+			(await this.loadData()) as Partial<ClaudeConnectorSettings>
+		);
 	}
 
 	async saveSettings() {
 		await this.saveData(this.settings);
 	}
-}
 
-class SampleModal extends Modal {
-	constructor(app: App) {
-		super(app);
-	}
+	// ── Helpers ──────────────────────────────────────────────────────────────
 
-	onOpen() {
-		let {contentEl} = this;
-		contentEl.setText('Woah!');
-	}
-
-	onClose() {
-		const {contentEl} = this;
-		contentEl.empty();
+	private updateStatusBar(): void {
+		if (!this.statusBarItem) return;
+		if (this.localRestApiIntegration?.active) {
+			this.statusBarItem.setText(
+				`Claude: HTTPS ${this.localRestApiIntegration.port}`
+			);
+		} else if (this.standaloneServer?.isRunning) {
+			this.statusBarItem.setText(
+				`Claude: HTTP ${this.settings.standalonePort}`
+			);
+		} else {
+			this.statusBarItem.setText("Claude: stopped");
+		}
 	}
 }
