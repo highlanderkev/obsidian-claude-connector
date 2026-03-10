@@ -49,7 +49,9 @@ The plugin will automatically generate a self-signed TLS certificate and start a
 HTTPS server. The **Connection info** section will appear with:
 
 - **SSE endpoint URL** — paste this into Claude's connector setup.
-- **Bearer token** — the API key Claude must supply.
+- **OAuth metadata URL** — optional discovery document for OAuth settings.
+- **OAuth token URL** — endpoint Claude calls to get an access token.
+- **OAuth client ID / client secret** — credentials Claude sends to the token endpoint.
 
 ### 3. Trust the TLS certificate
 
@@ -71,10 +73,17 @@ Claude can connect.
 ### 4. Add a Custom Connector in Claude
 
 1. Open Claude → **Settings** → **Integrations** → **Add custom connector**.
-2. Enter a name (e.g. *My Obsidian Vault*).
-3. Paste the **SSE endpoint URL**.
-4. Add an `Authorization` header: `Bearer <token>`.
-5. Save and connect.
+1. Enter a name (e.g. *My Obsidian Vault*).
+1. Paste the **SSE endpoint URL**.
+1. In OAuth settings, configure:
+
+   - Metadata URL (optional): the plugin's **OAuth metadata URL**
+   - Token URL: the plugin's **OAuth token URL**
+   - Client ID: the plugin's **OAuth client ID**
+   - Client secret: the plugin's **OAuth client secret**
+   - Grant type: `client_credentials`
+
+1. Save and connect.
 
 ---
 
@@ -84,7 +93,9 @@ Claude can connect.
 |-------|-----------|-------|
 |Enable MCP server|Start/stop the HTTPS server|off|
 |Port|Server port|27124|
-|Auth token|Bearer token Claude must supply (auto-generated)|—|
+|Access token|Bearer token returned by OAuth and used on MCP requests|—|
+|OAuth client ID|OAuth client ID for connector authentication|—|
+|OAuth client secret|OAuth client secret for connector authentication|—|
 |Open Certificate|Open the TLS cert in your OS certificate manager|—|
 |Regenerate Certificate|Generate a new cert (requires re-trusting)|—|
 
@@ -96,8 +107,14 @@ Claude can connect.
   outside your machine.
 - The self-signed TLS certificate is generated locally and stored in your plugin's data
   file. The private key never leaves your machine.
-- All requests must include the correct `Authorization: Bearer <token>` header. The token
-  is auto-generated on first install; use **Regenerate** if you need to rotate it.
+- Claude authenticates with OAuth client credentials (`client_id` + `client_secret`) at
+  the local token endpoint (`/oauth/token`).
+- The plugin also exposes OAuth metadata at
+  `/.well-known/oauth-authorization-server` for automatic discovery.
+- For broader client compatibility, the same metadata is also available at
+  `/.well-known/openid-configuration`.
+- MCP requests must include `Authorization: Bearer <token>`, where `<token>` is the
+  access token returned by that OAuth exchange.
 - No vault data is sent anywhere by the plugin itself. Data flows only between Obsidian
   and whichever Claude client connects to the local server.
 

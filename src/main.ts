@@ -11,6 +11,10 @@ import { ServerStatusModal } from "./ui/status-modal";
 
 export interface ConnectionInfo {
 	sseUrl: string;
+	oauthMetadataUrl: string;
+	oauthTokenUrl: string;
+	oauthClientId: string;
+	oauthClientSecret: string;
 	bearerToken: string;
 	mode: "HTTPS";
 }
@@ -29,6 +33,21 @@ export default class ClaudeConnectorPlugin extends Plugin {
 		// Ensure a token exists on first install.
 		if (!this.settings.standaloneAuthToken) {
 			this.settings.standaloneAuthToken = generateAuthToken();
+		}
+ 
+		if (!this.settings.oauthClientId) {
+			this.settings.oauthClientId = generateAuthToken();
+		}
+
+		if (!this.settings.oauthClientSecret) {
+			this.settings.oauthClientSecret = generateAuthToken();
+		}
+
+		if (
+			!this.settings.standaloneAuthToken ||
+			!this.settings.oauthClientId ||
+			!this.settings.oauthClientSecret
+		) {
 			await this.saveSettings();
 		}
 
@@ -107,6 +126,8 @@ export default class ClaudeConnectorPlugin extends Plugin {
 			this.settings.standaloneHost,
 			this.settings.standalonePort,
 			this.settings.standaloneAuthToken,
+			this.settings.oauthClientId,
+			this.settings.oauthClientSecret,
 			bundle
 		);
 		try {
@@ -142,6 +163,10 @@ export default class ClaudeConnectorPlugin extends Plugin {
 		if (this.standaloneServer?.isRunning) {
 			return {
 				sseUrl: `https://${this.settings.standaloneHost}:${this.settings.standalonePort}/mcp`,
+				oauthMetadataUrl: `https://${this.settings.standaloneHost}:${this.settings.standalonePort}/.well-known/oauth-authorization-server`,
+				oauthTokenUrl: `https://${this.settings.standaloneHost}:${this.settings.standalonePort}/oauth/token`,
+				oauthClientId: this.settings.oauthClientId,
+				oauthClientSecret: this.settings.oauthClientSecret,
 				bearerToken: this.settings.standaloneAuthToken,
 				mode: "HTTPS",
 			};

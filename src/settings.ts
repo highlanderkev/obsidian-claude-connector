@@ -1,7 +1,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { Notice, PluginSettingTab, Setting } from "obsidian";
+import type { App } from "obsidian";
 import { CertManager } from "./mcp/cert-manager";
 import type ClaudeConnectorPlugin from "./main";
 
@@ -10,8 +11,12 @@ export interface ClaudeConnectorSettings {
 	standaloneHost: string;
 	/** Port for the built-in HTTPS MCP server. */
 	standalonePort: number;
-	/** Bearer token Claude must supply. Auto-generated on first load. */
+	/** Access token returned by the local OAuth token endpoint. */
 	standaloneAuthToken: string;
+	/** OAuth client identifier Claude uses to request an access token. */
+	oauthClientId: string;
+	/** OAuth client secret Claude uses to request an access token. */
+	oauthClientSecret: string;
 	/** Whether to run the server at all. */
 	enableServer: boolean;
 	/** PEM-encoded self-signed TLS certificate. */
@@ -24,6 +29,8 @@ export const DEFAULT_SETTINGS: ClaudeConnectorSettings = {
 	standaloneHost: "127.0.0.1",
 	standalonePort: 27124,
 	standaloneAuthToken: "",
+	oauthClientId: "",
+	oauthClientSecret: "",
 	enableServer: false,
 	tlsCert: "",
 	tlsKey: "",
@@ -114,9 +121,9 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Auth token")
+			.setName("Access token")
 			.setDesc(
-				"Bearer token Claude must supply to authenticate. Keep this secret."
+				"Token the plugin returns from OAuth and expects as Authorization: Bearer <token> on MCP requests."
 			)
 			.addText((text) =>
 				text
@@ -131,9 +138,49 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 				btn.setButtonText("Regenerate").onClick(async () => {
 					this.plugin.settings.standaloneAuthToken = generateAuthToken();
 					await this.plugin.saveSettings();
-					new Notice(
-						"New auth token generated — update your Claude connector."
-					);
+					new Notice("New access token generated.");
+					this.display();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("OAuth client ID")
+			.setDesc("Client ID Claude uses for OAuth client credentials.")
+			.addText((text) =>
+				text
+					.setPlaceholder("Auto-generated on first load")
+					.setValue(this.plugin.settings.oauthClientId)
+					.onChange(async (value) => {
+						this.plugin.settings.oauthClientId = value;
+						await this.plugin.saveSettings();
+					})
+			)
+			.addButton((btn) =>
+				btn.setButtonText("Regenerate").onClick(async () => {
+					this.plugin.settings.oauthClientId = generateAuthToken();
+					await this.plugin.saveSettings();
+					new Notice("New OAuth client ID generated.");
+					this.display();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("OAuth client secret")
+			.setDesc("Client secret Claude uses for OAuth client credentials.")
+			.addText((text) =>
+				text
+					.setPlaceholder("Auto-generated on first load")
+					.setValue(this.plugin.settings.oauthClientSecret)
+					.onChange(async (value) => {
+						this.plugin.settings.oauthClientSecret = value;
+						await this.plugin.saveSettings();
+					})
+			)
+			.addButton((btn) =>
+				btn.setButtonText("Regenerate").onClick(async () => {
+					this.plugin.settings.oauthClientSecret = generateAuthToken();
+					await this.plugin.saveSettings();
+					new Notice("New OAuth client secret generated.");
 					this.display();
 				})
 			);
@@ -233,8 +280,58 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 					);
 
 				new Setting(infoEl)
-					.setName("Bearer token")
-					.setDesc("Include as the Authorization header value.")
+					.setName("OAuth metadata URL")
+					.setDesc("Optional: clients can discover OAuth config from this endpoint.")
+					.addText((text) =>
+						text.setValue(info.oauthMetadataUrl).setDisabled(true)
+					)
+					.addButton((btn) =>
+						btn.setButtonText("Copy").onClick(() => {
+							void navigator.clipboard.writeText(info.oauthMetadataUrl);
+							new Notice("Copied OAuth metadata URL");
+						})
+					);
+
+				new Setting(infoEl)
+					.setName("OAuth token URL")
+					.setDesc("Configure Claude OAuth to use this token endpoint.")
+					.addText((text) =>
+						text.setValue(info.oauthTokenUrl).setDisabled(true)
+					)
+					.addButton((btn) =>
+						btn.setButtonText("Copy").onClick(() => {
+							void navigator.clipboard.writeText(info.oauthTokenUrl);
+							new Notice("Copied OAuth token URL");
+						})
+					);
+
+				new Setting(infoEl)
+					.setName("OAuth client ID")
+					.addText((text) =>
+						text.setValue(info.oauthClientId).setDisabled(true)
+					)
+					.addButton((btn) =>
+						btn.setButtonText("Copy").onClick(() => {
+							void navigator.clipboard.writeText(info.oauthClientId);
+							new Notice("Copied OAuth client ID");
+						})
+					);
+
+				new Setting(infoEl)
+					.setName("OAuth client secret")
+					.addText((text) =>
+						text.setValue(info.oauthClientSecret).setDisabled(true)
+					)
+					.addButton((btn) =>
+						btn.setButtonText("Copy").onClick(() => {
+							void navigator.clipboard.writeText(info.oauthClientSecret);
+							new Notice("Copied OAuth client secret");
+						})
+					);
+
+				new Setting(infoEl)
+					.setName("Returned access token")
+					.setDesc("OAuth returns this as Bearer token for MCP requests.")
 					.addText((text) =>
 						text.setValue(info.bearerToken).setDisabled(true)
 					)

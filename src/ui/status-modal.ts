@@ -1,4 +1,5 @@
-import { App, Modal, Notice, Setting } from "obsidian";
+import { Modal, Notice, Setting } from "obsidian";
+import type { App } from "obsidian";
 import type ClaudeConnectorPlugin from "../main";
 
 /**
@@ -6,7 +7,7 @@ import type ClaudeConnectorPlugin from "../main";
  * details that users need when configuring a Claude Custom Connector.
  */
 export class ServerStatusModal extends Modal {
-	private plugin: ClaudeConnectorPlugin;
+	private readonly plugin: ClaudeConnectorPlugin;
 
 	constructor(app: App, plugin: ClaudeConnectorPlugin) {
 		super(app);
@@ -46,17 +47,65 @@ export class ServerStatusModal extends Modal {
 				);
 
 			new Setting(contentEl)
-				.setName("Bearer token")
-				.setDesc(
-					"Paste this as the value of the Authorization header (e.g. Bearer <token>)."
+				.setName("OAuth metadata URL")
+				.setDesc("Optional: allows OAuth configuration discovery.")
+				.addText((t) =>
+					t.setValue(info.oauthMetadataUrl).setDisabled(true)
 				)
+				.addButton((b) =>
+					b.setButtonText("Copy").onClick(() => {
+						void navigator.clipboard.writeText(info.oauthMetadataUrl);
+						new Notice("Copied OAuth metadata URL");
+					})
+				);
+
+			new Setting(contentEl)
+				.setName("OAuth token URL")
+				.setDesc("Use this as Claude OAuth token endpoint.")
+				.addText((t) =>
+					t.setValue(info.oauthTokenUrl).setDisabled(true)
+				)
+				.addButton((b) =>
+					b.setButtonText("Copy").onClick(() => {
+						void navigator.clipboard.writeText(info.oauthTokenUrl);
+						new Notice("Copied OAuth token URL");
+					})
+				);
+
+			new Setting(contentEl)
+				.setName("OAuth client ID")
+				.addText((t) =>
+					t.setValue(info.oauthClientId).setDisabled(true)
+				)
+				.addButton((b) =>
+					b.setButtonText("Copy").onClick(() => {
+						void navigator.clipboard.writeText(info.oauthClientId);
+						new Notice("Copied OAuth client ID");
+					})
+				);
+
+			new Setting(contentEl)
+				.setName("OAuth client secret")
+				.addText((t) =>
+					t.setValue(info.oauthClientSecret).setDisabled(true)
+				)
+				.addButton((b) =>
+					b.setButtonText("Copy").onClick(() => {
+						void navigator.clipboard.writeText(info.oauthClientSecret);
+						new Notice("Copied OAuth client secret");
+					})
+				);
+
+			new Setting(contentEl)
+				.setName("Returned access token")
+				.setDesc("OAuth returns this as Bearer token for MCP requests.")
 				.addText((t) =>
 					t.setValue(info.bearerToken).setDisabled(true)
 				)
 				.addButton((b) =>
 					b.setButtonText("Copy").onClick(() => {
 						void navigator.clipboard.writeText(info.bearerToken);
-						new Notice("Copied bearer token");
+						new Notice("Copied access token");
 					})
 				);
 		} else {
