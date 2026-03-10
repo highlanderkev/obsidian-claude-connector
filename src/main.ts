@@ -76,7 +76,9 @@ export default class ClaudeConnectorPlugin extends Plugin {
 		// Settings tab
 		this.addSettingTab(new ClaudeConnectorSettingTab(this.app, this));
 
-		// Listen for the Local REST API loading after us
+		// Listen for the Local REST API loading after us.
+		// The obsidian-local-rest-api plugin fires this workspace event in its
+		// onload() via: this.app.workspace.trigger("obsidian-local-rest-api:loaded")
 		this.registerEvent(
 			// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
 			(this.app.workspace as any).on(

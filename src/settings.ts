@@ -26,11 +26,11 @@ export const DEFAULT_SETTINGS: ClaudeConnectorSettings = {
 export function generateAuthToken(): string {
 	const chars =
 		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-	let token = "";
-	for (let i = 0; i < 32; i++) {
-		token += chars.charAt(Math.floor(Math.random() * chars.length));
-	}
-	return token;
+	const bytes = new Uint8Array(32);
+	crypto.getRandomValues(bytes);
+	return Array.from(bytes)
+		.map((b) => chars[b % chars.length])
+		.join("");
 }
 
 export class ClaudeConnectorSettingTab extends PluginSettingTab {

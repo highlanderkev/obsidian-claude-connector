@@ -140,7 +140,7 @@ export class LocalRestApiIntegration {
 
 		this.sessions.add(session);
 
-		const postUrl = `https://127.0.0.1:${this.port}/mcp/messages?sessionId=${sessionId}`;
+		const postUrl = `https://127.0.0.1:${this.port}/mcp/messages?sessionId=${encodeURIComponent(sessionId)}`;
 		res.write(`event: endpoint\ndata: ${JSON.stringify(postUrl)}\n\n`);
 
 		const pingTimer = setInterval(() => {

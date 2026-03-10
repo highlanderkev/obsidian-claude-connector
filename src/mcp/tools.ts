@@ -128,10 +128,8 @@ export async function executeTool(
 			let files = vault.getMarkdownFiles();
 
 			if (folder) {
-				const normalized = folder.endsWith("/") ? folder : `${folder}/`;
-				files = files.filter(
-					(f) => f.path.startsWith(normalized) || f.path.startsWith(folder + "/")
-				);
+				const prefix = folder.endsWith("/") ? folder : `${folder}/`;
+				files = files.filter((f) => f.path.startsWith(prefix));
 			}
 
 			files = files.slice(0, limit);

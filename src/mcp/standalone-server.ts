@@ -130,7 +130,7 @@ export class StandaloneServer {
 		this.sessions.add(session);
 
 		// Inform client where to POST messages for this session.
-		const postUrl = `http://127.0.0.1:${this.port}/messages?sessionId=${sessionId}`;
+		const postUrl = `http://127.0.0.1:${this.port}/messages?sessionId=${encodeURIComponent(sessionId)}`;
 		res.write(`event: endpoint\ndata: ${JSON.stringify(postUrl)}\n\n`);
 
 		// Keep-alive comment every 30 s.
