@@ -219,7 +219,7 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 			.setName("Certificate actions")
 			.addButton((btn) =>
 				btn
-					.setButtonText("Open Certificate")
+					.setButtonText("Open certificate")
 					.setDisabled(!hasCert)
 					.onClick(async () => {
 						const certPath = path.join(
@@ -238,7 +238,7 @@ export class ClaudeConnectorSettingTab extends PluginSettingTab {
 					})
 			)
 			.addButton((btn) =>
-				btn.setButtonText("Regenerate Certificate").onClick(async () => {
+				btn.setButtonText("Regenerate certificate").onClick(async () => {
 					await new CertManager(this.plugin).generateAndSave();
 					new Notice(
 						"New TLS certificate generated — you will need to trust it again."

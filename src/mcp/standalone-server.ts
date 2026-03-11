@@ -222,7 +222,7 @@ export class StandaloneServer {
 	// ── Helpers ────────────────────────────────────────────────────────────
 
 	private checkAuth(req: IncomingMessage): boolean {
-		const header = req.headers["authorization"];
+		const header = req.headers.authorization;
 		return typeof header === "string" && header === `Bearer ${this.authToken}`;
 	}
 
@@ -238,7 +238,15 @@ export class StandaloneServer {
 	private async readBody(req: IncomingMessage): Promise<string> {
 		let body = "";
 		for await (const chunk of req) {
-			body += chunk.toString();
+			let chunkText: string;
+			if (typeof chunk === "string") {
+				chunkText = chunk;
+			} else if (Buffer.isBuffer(chunk)) {
+				chunkText = chunk.toString("utf8");
+			} else {
+				chunkText = String(chunk);
+			}
+			body += chunkText;
 			if (body.length > 32_768) {
 				break;
 			}
@@ -276,7 +284,7 @@ export class StandaloneServer {
 		req: IncomingMessage,
 		bodyParams: URLSearchParams
 	): { clientId: string; clientSecret: string } | null {
-		const auth = req.headers["authorization"];
+		const auth = req.headers.authorization;
 		if (typeof auth === "string" && auth.startsWith("Basic ")) {
 			const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8");
 			const sep = decoded.indexOf(":");

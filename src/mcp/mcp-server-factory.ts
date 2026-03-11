@@ -124,7 +124,7 @@ export function createMcpServer(plugin: ClaudeConnectorPlugin): McpServer {
 	server.registerResource(
 		"vault-notes",
 		new ResourceTemplate("obsidian://note/{+path}", {
-			list: async () => ({
+			list: () => ({
 				resources: plugin.app.vault.getMarkdownFiles().map((f) => ({
 					uri: `obsidian://note/${encodeURIComponent(f.path)}`,
 					name: f.basename,
