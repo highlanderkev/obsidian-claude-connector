@@ -57,18 +57,46 @@ export async function executeTool(
 			const searchContent = (args["search_content"] as boolean) ?? false;
 			const files = vault.getMarkdownFiles();
 			const matches: string[] = [];
+			const contentSearchFiles: TFile[] = [];
 
+			// First, collect title matches synchronously and build a list of files
+			// that need content-based searching (to be processed with limited concurrency).
 			for (const file of files) {
 				if (file.basename.toLowerCase().includes(query)) {
 					matches.push(`- ${file.path} (title match)`);
 					continue;
 				}
 				if (searchContent) {
-					const content = await vault.cachedRead(file);
-					if (content.toLowerCase().includes(query)) {
-						matches.push(`- ${file.path} (content match)`);
-					}
+					contentSearchFiles.push(file);
 				}
+			}
+
+			// Perform content search with a small, concurrency-limited worker pool
+			// to avoid blocking plugin activity with many sequential file reads.
+			if (searchContent && contentSearchFiles.length > 0) {
+				const maxConcurrentReads = 5;
+				let index = 0;
+
+				const worker = async () => {
+					while (true) {
+						const currentIndex = index++;
+						if (currentIndex >= contentSearchFiles.length) {
+							break;
+						}
+						const file = contentSearchFiles[currentIndex];
+						const content = await vault.cachedRead(file);
+						if (content.toLowerCase().includes(query)) {
+							matches.push(`- ${file.path} (content match)`);
+						}
+					}
+				};
+
+				const workerCount = Math.min(maxConcurrentReads, contentSearchFiles.length);
+				const workers: Promise<void>[] = [];
+				for (let i = 0; i < workerCount; i++) {
+					workers.push(worker());
+				}
+				await Promise.all(workers);
 			}
 
 			if (matches.length === 0) {
