@@ -1,8 +1,19 @@
-/*
+/* Claude Connector — plugin styles */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.claude-connector-connection-info {
+	margin-top: 1.5em;
+	padding: 1em;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-secondary);
+}
 
-If your plugin does not need CSS, delete this file.
+.claude-connector-connection-info h3 {
+	margin-top: 0;
+}
 
-*/
+.claude-connector-status-line {
+	font-size: 1.05em;
+	font-weight: 500;
+	margin-bottom: 0.75em;
+}

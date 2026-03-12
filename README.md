@@ -1,90 +1,211 @@
-# Obsidian Sample Plugin
+# Claude Connector for Obsidian
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Connect your Obsidian vault to [Claude](https://claude.ai) via
+[Model Context Protocol (MCP)](https://modelcontextprotocol.io) Custom Connectors.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+Claude can then read, search, create, and update notes directly inside your vault
+during a conversation — without you having to copy-paste anything.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+---
 
-## First time developing plugins?
+## Features
 
-Quick starting guide for new plugin devs:
+- **MCP server built-in** — the plugin runs a local HTTPS MCP server that Claude connects to.
+- **No external plugins required** — generates and manages its own self-signed TLS
+  certificate so Claude custom connectors can connect over HTTPS without any additional setup.
+- **Vault tools exposed to Claude**:
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+  |Tool|Description|
+  |----|-----------|
+  |`list_notes`|List notes, optionally filtered by folder|
+  |`read_note`|Read the full content of a note|
+  |`search_notes`|Search notes by title or content|
+  |`create_note`|Create a new note|
+  |`update_note`|Overwrite, append to, or prepend to a note|
 
-## Releasing new releases
+- **Vault resources** — every Markdown file is also exposed as an MCP resource with URI
+  `obsidian://note/<path>`.
+- **Desktop only** — uses Node.js networking APIs available in Obsidian Desktop (Electron).
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+---
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+## Quick start
 
-## Adding your plugin to the community plugin list
+### 1. Install the plugin
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+Copy `main.js`, `manifest.json`, and `styles.css` into:
 
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+```text
+<YourVault>/.obsidian/plugins/obsidian-claude-connector/
 ```
 
-If you have multiple URLs, you can also do:
+Reload Obsidian and enable **Claude Connector** under **Settings → Community plugins**.
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
+### 2. Enable the MCP server
+
+Go to **Settings → Claude Connector** and toggle **Enable MCP server** on.
+
+The plugin will automatically generate a self-signed TLS certificate and start a local
+HTTPS server. The **Connection info** section will appear with:
+
+- **SSE endpoint URL** — paste this into Claude's connector setup.
+- **OAuth metadata URL** — optional discovery document for OAuth settings.
+- **OAuth token URL** — endpoint Claude calls to get an access token.
+- **OAuth client ID / client secret** — credentials Claude sends to the token endpoint.
+
+### 3. Trust the TLS certificate
+
+Because the plugin uses a self-signed certificate, your system must trust it before
+Claude can connect.
+
+1. Click **Open Certificate** in the **TLS certificate** section of the plugin settings.
+2. Your OS certificate manager will open — follow the prompts to add and trust the certificate:
+
+   |OS|Steps|
+   |--|-----|
+   |**macOS**|In Keychain Access, double-click the certificate → expand **Trust** → set **"When using this certificate"** to **Always Trust**|
+   |**Windows**|In the import wizard, choose **Trusted Root Certification Authorities** as the certificate store|
+   |**Linux (Chrome/Chromium)**|Settings → Privacy → Manage certificates → Authorities → Import|
+
+> **One-time step.** The certificate is stored in the plugin's data and reused across
+> Obsidian restarts. You only need to trust it again if you click **Regenerate Certificate**.
+
+### 4. Add a Custom Connector in Claude
+
+1. Open Claude → **Settings** → **Integrations** → **Add custom connector**.
+1. Enter a name (e.g. *My Obsidian Vault*).
+1. Paste the **SSE endpoint URL**.
+1. In OAuth settings, configure:
+
+   - Metadata URL (optional): the plugin's **OAuth metadata URL**
+   - Token URL: the plugin's **OAuth token URL**
+   - Client ID: the plugin's **OAuth client ID**
+   - Client secret: the plugin's **OAuth client secret**
+   - Grant type: `client_credentials`
+
+1. Save and connect.
+
+---
+
+## Configuration
+
+|Setting|Description|Default|
+|-------|-----------|-------|
+|Enable MCP server|Start/stop the HTTPS server|off|
+|Port|Server port|27124|
+|Access token|Bearer token returned by OAuth and used on MCP requests|—|
+|OAuth client ID|OAuth client ID for connector authentication|—|
+|OAuth client secret|OAuth client secret for connector authentication|—|
+|Open Certificate|Open the TLS cert in your OS certificate manager|—|
+|Regenerate Certificate|Generate a new cert (requires re-trusting)|—|
+
+---
+
+## Security notes
+
+- The server only binds to `127.0.0.1` (localhost) — it is **never** accessible from
+  outside your machine.
+- The self-signed TLS certificate is generated locally and stored in your plugin's data
+  file. The private key never leaves your machine.
+- Claude authenticates with OAuth client credentials (`client_id` + `client_secret`) at
+  the local token endpoint (`/oauth/token`).
+- The plugin also exposes OAuth metadata at
+  `/.well-known/oauth-authorization-server` for automatic discovery.
+- For broader client compatibility, the same metadata is also available at
+  `/.well-known/openid-configuration`.
+- MCP requests must include `Authorization: Bearer <token>`, where `<token>` is the
+  access token returned by that OAuth exchange.
+- No vault data is sent anywhere by the plugin itself. Data flows only between Obsidian
+  and whichever Claude client connects to the local server.
+
+---
+
+## Development
+
+```bash
+npm install
+npm run dev     # watch mode
+npm run build   # production build
+npm run lint    # ESLint
+npm run inspector # launch MCP Inspector UI
+npm run inspector:launch # launch Inspector with prefilled connection options
 ```
 
-## API Documentation
+### Test with MCP Inspector
 
-See https://docs.obsidian.md
+Use the MCP Inspector to test tools and resources exposed by this plugin.
+
+1. Start the plugin server in Obsidian (**Settings → Claude Connector** → enable **MCP server**).
+2. Launch Inspector from this project:
+
+```bash
+npm run inspector
+```
+
+3. In Inspector, connect using values from the plugin's **Connection info for Claude** panel:
+
+  - Transport/endpoint URL: use Inspector transport `http` with the plugin endpoint URL (for example `https://127.0.0.1:27124/mcp`)
+  - OAuth metadata URL (optional): **OAuth metadata URL**
+  - OAuth token URL: **OAuth token URL**
+  - OAuth client ID: **OAuth client ID**
+  - OAuth client secret: **OAuth client secret**
+  - Grant type: `client_credentials`
+
+The plugin serves MCP over Streamable HTTP, and MCP Inspector exposes that mode as `http`, not `streamable-http`. The launcher accepts `OBSIDIAN_MCP_TRANSPORT=sse` for backwards compatibility only, and automatically converts it to Inspector transport `http` internally because the plugin server does not use the deprecated SSE transport.
+
+If your OS has not trusted the plugin certificate yet, complete the certificate trust step first in the plugin settings.
+
+### Inspector launcher (secure by default)
+
+Use `npm run inspector:launch` to start Inspector with a prefilled server URL.
+
+By default, the launcher does **not** pass an `Authorization` header on the command line so bearer tokens are not exposed in process arguments (for example via `ps`).
+
+If you want convenience over this protection for local debugging, set `OBSIDIAN_INSPECTOR_PREFILL_AUTH=1` to opt in to prefilled Authorization headers.
+
+Supported environment variables:
+
+- `OBSIDIAN_MCP_URL` (default: `https://127.0.0.1:27124/mcp`)
+- `OBSIDIAN_MCP_TRANSPORT` (default: `http`; `streamable-http` and `sse` are accepted aliases)
+- `OBSIDIAN_INSPECTOR_PREFILL_AUTH=1` (optional; prefill `Authorization` header, exposes token in process args)
+- `OBSIDIAN_BEARER_TOKEN` (optional, direct token)
+- `OBSIDIAN_OAUTH_TOKEN_URL` (optional, defaults from `OBSIDIAN_MCP_URL`)
+- `OBSIDIAN_OAUTH_CLIENT_ID` (optional, used to fetch token)
+- `OBSIDIAN_OAUTH_CLIENT_SECRET` (optional, used to fetch token)
+- `OBSIDIAN_INSECURE_TLS=1` (deprecated; retained only for backwards compatibility. Prefer `npm run inspector:launch:insecure` instead; this flag’s behavior may be removed in a future release.)
+
+If you hit a self-signed certificate error in Inspector, either trust the plugin certificate in your OS first, or use:
+
+```bash
+npm run inspector:launch:insecure
+```
+
+First-run one-liner (OAuth + insecure TLS):
+
+```bash
+OBSIDIAN_MCP_URL="https://127.0.0.1:27124/mcp" OBSIDIAN_OAUTH_CLIENT_ID="<client-id>" OBSIDIAN_OAUTH_CLIENT_SECRET="<client-secret>" npm run inspector:launch:insecure
+```
+
+Prefill Authorization header explicitly (less secure, but convenient):
+
+```bash
+OBSIDIAN_MCP_URL="https://127.0.0.1:27124/mcp" OBSIDIAN_INSPECTOR_PREFILL_AUTH=1 OBSIDIAN_OAUTH_CLIENT_ID="<client-id>" OBSIDIAN_OAUTH_CLIENT_SECRET="<client-secret>" npm run inspector:launch:insecure
+```
+
+Example:
+
+```bash
+OBSIDIAN_MCP_URL="https://127.0.0.1:27124/mcp" \
+OBSIDIAN_OAUTH_CLIENT_ID="<client-id>" \
+OBSIDIAN_OAUTH_CLIENT_SECRET="<client-secret>" \
+npm run inspector:launch
+```
+
+---
+
+## References
+
+- [MCP specification](https://modelcontextprotocol.io/specification/2024-11-05/basic/transports)
+- [Claude Custom Connectors (remote MCP)](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)
+- [Building custom connectors via remote MCP](https://support.claude.com/en/articles/11503834-building-custom-connectors-via-remote-mcp-servers)
+- [Obsidian API docs](https://docs.obsidian.md)
