@@ -84,6 +84,9 @@ export async function executeTool(
 							break;
 						}
 						const file = contentSearchFiles[currentIndex];
+						if (!file) {
+							continue;
+						}
 						const content = await vault.cachedRead(file);
 						if (content.toLowerCase().includes(query)) {
 							matches.push(`- ${file.path} (content match)`);
