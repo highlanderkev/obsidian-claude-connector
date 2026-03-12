@@ -127,6 +127,78 @@ npm install
 npm run dev     # watch mode
 npm run build   # production build
 npm run lint    # ESLint
+npm run inspector # launch MCP Inspector UI
+npm run inspector:launch # launch Inspector with prefilled connection options
+```
+
+### Test with MCP Inspector
+
+Use the MCP Inspector to test tools and resources exposed by this plugin.
+
+1. Start the plugin server in Obsidian (**Settings → Claude Connector** → enable **MCP server**).
+2. Launch Inspector from this project:
+
+```bash
+npm run inspector
+```
+
+3. In Inspector, connect using values from the plugin's **Connection info for Claude** panel:
+
+  - Transport/endpoint URL: use Inspector transport `http` with the plugin endpoint URL (for example `https://127.0.0.1:27124/mcp`)
+  - OAuth metadata URL (optional): **OAuth metadata URL**
+  - OAuth token URL: **OAuth token URL**
+  - OAuth client ID: **OAuth client ID**
+  - OAuth client secret: **OAuth client secret**
+  - Grant type: `client_credentials`
+
+The plugin serves MCP over Streamable HTTP, and MCP Inspector exposes that mode as `http`, not `streamable-http`. The launcher accepts `OBSIDIAN_MCP_TRANSPORT=sse` for backwards compatibility only, and automatically converts it to Inspector transport `http` internally because the plugin server does not use the deprecated SSE transport.
+
+If your OS has not trusted the plugin certificate yet, complete the certificate trust step first in the plugin settings.
+
+### Inspector launcher (secure by default)
+
+Use `npm run inspector:launch` to start Inspector with a prefilled server URL.
+
+By default, the launcher does **not** pass an `Authorization` header on the command line so bearer tokens are not exposed in process arguments (for example via `ps`).
+
+If you want convenience over this protection for local debugging, set `OBSIDIAN_INSPECTOR_PREFILL_AUTH=1` to opt in to prefilled Authorization headers.
+
+Supported environment variables:
+
+- `OBSIDIAN_MCP_URL` (default: `https://127.0.0.1:27124/mcp`)
+- `OBSIDIAN_MCP_TRANSPORT` (default: `http`; `streamable-http` and `sse` are accepted aliases)
+- `OBSIDIAN_INSPECTOR_PREFILL_AUTH=1` (optional; prefill `Authorization` header, exposes token in process args)
+- `OBSIDIAN_BEARER_TOKEN` (optional, direct token)
+- `OBSIDIAN_OAUTH_TOKEN_URL` (optional, defaults from `OBSIDIAN_MCP_URL`)
+- `OBSIDIAN_OAUTH_CLIENT_ID` (optional, used to fetch token)
+- `OBSIDIAN_OAUTH_CLIENT_SECRET` (optional, used to fetch token)
+- `OBSIDIAN_INSECURE_TLS=1` (deprecated; retained only for backwards compatibility. Prefer `npm run inspector:launch:insecure` instead; this flag’s behavior may be removed in a future release.)
+
+If you hit a self-signed certificate error in Inspector, either trust the plugin certificate in your OS first, or use:
+
+```bash
+npm run inspector:launch:insecure
+```
+
+First-run one-liner (OAuth + insecure TLS):
+
+```bash
+OBSIDIAN_MCP_URL="https://127.0.0.1:27124/mcp" OBSIDIAN_OAUTH_CLIENT_ID="<client-id>" OBSIDIAN_OAUTH_CLIENT_SECRET="<client-secret>" npm run inspector:launch:insecure
+```
+
+Prefill Authorization header explicitly (less secure, but convenient):
+
+```bash
+OBSIDIAN_MCP_URL="https://127.0.0.1:27124/mcp" OBSIDIAN_INSPECTOR_PREFILL_AUTH=1 OBSIDIAN_OAUTH_CLIENT_ID="<client-id>" OBSIDIAN_OAUTH_CLIENT_SECRET="<client-secret>" npm run inspector:launch:insecure
+```
+
+Example:
+
+```bash
+OBSIDIAN_MCP_URL="https://127.0.0.1:27124/mcp" \
+OBSIDIAN_OAUTH_CLIENT_ID="<client-id>" \
+OBSIDIAN_OAUTH_CLIENT_SECRET="<client-secret>" \
+npm run inspector:launch
 ```
 
 ---

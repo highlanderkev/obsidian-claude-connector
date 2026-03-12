@@ -8,7 +8,11 @@
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"lint": "eslint ."
+		"lint": "eslint .",
+		"inspector": "npm exec @modelcontextprotocol/inspector",
+		"inspector:latest": "npm exec @modelcontextprotocol/inspector@latest",
+		"inspector:launch": "node scripts/launch-inspector.mjs",
+		"inspector:launch:insecure": "OBSIDIAN_INSECURE_TLS=1 node scripts/launch-inspector.mjs"
 	},
 	"keywords": [],
 	"license": "0-BSD",

@@ -221,6 +221,7 @@ export default tseslint.config(
 					allowDefaultProject: [
 						'eslint.config.mts',
 						'eslint.config.js',
+						'scripts/launch-inspector.mjs',
 						'manifest.json'
 					]
 				},
