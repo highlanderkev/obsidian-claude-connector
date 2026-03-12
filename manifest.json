@@ -1,10 +1,68 @@
 {
-	"id": "obsidian-claude-connector",
-	"name": "Claude Connector",
+	"manifest_version": "0.3",
+	"name": "obsidian-claude-connector",
+	"display_name": "Obsidian Claude Connector",
 	"version": "1.0.0",
-	"minAppVersion": "1.4.0",
-	"description": "Connect your Obsidian vault to Claude via Model Context Protocol (MCP) custom connectors. Integrates with obsidian-local-rest-api when available.",
-	"author": "highlanderkev",
-	"authorUrl": "https://github.com/highlanderkev/obsidian-claude-connector",
-	"isDesktopOnly": true
+	"description": "Connect your Obsidian vault to Claude via Model Context Protocol (MCP). Reads and writes Markdown notes directly from your vault directory.",
+	"long_description": "Obsidian Claude Connector is a local MCP server that gives Claude access to your Obsidian vault. It exposes five vault tools — list notes, read a note, search notes, create a note, and update a note — letting Claude read and write Markdown files directly from the configured vault directory. No internet connection or Obsidian installation is required at runtime; the server reads files straight from the filesystem.",
+	"author": {
+		"name": "highlanderkev",
+		"url": "https://github.com/highlanderkev/obsidian-claude-connector"
+	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/highlanderkev/obsidian-claude-connector.git"
+	},
+	"homepage": "https://github.com/highlanderkev/obsidian-claude-connector",
+	"support": "https://github.com/highlanderkev/obsidian-claude-connector/issues",
+	"server": {
+		"type": "node",
+		"entry_point": "server/index.js",
+		"mcp_config": {
+			"command": "node",
+			"args": ["${__dirname}/server/index.js"],
+			"env": {
+				"VAULT_PATH": "${user_config.vault_path}"
+			}
+		}
+	},
+	"tools": [
+		{
+			"name": "list_notes",
+			"description": "List notes in the vault, optionally filtered by folder path."
+		},
+		{
+			"name": "read_note",
+			"description": "Read the full Markdown contents of a note by its vault-relative path."
+		},
+		{
+			"name": "search_notes",
+			"description": "Search for notes whose title or content contains a query string."
+		},
+		{
+			"name": "create_note",
+			"description": "Create a new Markdown note in the vault."
+		},
+		{
+			"name": "update_note",
+			"description": "Overwrite, append to, or prepend content to an existing note."
+		}
+	],
+	"keywords": ["obsidian", "notes", "markdown", "vault", "knowledge-base"],
+	"license": "0-BSD",
+	"user_config": {
+		"vault_path": {
+			"type": "directory",
+			"title": "Vault directory",
+			"description": "The root folder of your Obsidian vault. All note paths are resolved relative to this directory.",
+			"required": true
+		}
+	},
+	"compatibility": {
+		"claude_desktop": ">=0.10.0",
+		"platforms": ["darwin", "win32"],
+		"runtimes": {
+			"node": ">=18.0.0"
+		}
+	}
 }

@@ -1,27 +1,24 @@
 {
 	"name": "obsidian-claude-connector",
 	"version": "1.0.0",
-	"description": "Obsidian plugin that connects your vault to Claude via Model Context Protocol (MCP) custom connectors",
-	"main": "main.js",
+	"description": "MCP Bundle (MCPB) desktop extension that connects your Obsidian vault to Claude via Model Context Protocol",
+	"main": "server/index.js",
 	"type": "module",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
-		"version": "node version-bump.mjs && git add manifest.json versions.json",
+		"pack": "npm run build && mcpb pack",
+		"version": "node version-bump.mjs && git add manifest.json",
 		"lint": "eslint .",
-		"inspector": "npm exec @modelcontextprotocol/inspector",
-		"inspector:latest": "npm exec @modelcontextprotocol/inspector@latest",
-		"inspector:launch": "node scripts/launch-inspector.mjs",
-		"inspector:launch:insecure": "OBSIDIAN_INSECURE_TLS=1 node scripts/launch-inspector.mjs"
+		"inspector": "npm exec @modelcontextprotocol/inspector"
 	},
 	"keywords": [],
 	"license": "0-BSD",
 	"devDependencies": {
+		"@anthropic-ai/mcpb": "^2.1.2",
 		"@eslint/js": "9.30.1",
 		"@types/node": "^16.11.6",
-		"@types/node-forge": "^1.3.14",
 		"esbuild": "0.25.5",
-		"eslint-plugin-obsidianmd": "0.1.9",
 		"globals": "14.0.0",
 		"jiti": "2.6.1",
 		"tslib": "2.4.0",
@@ -30,8 +27,6 @@
 	},
 	"dependencies": {
 		"@modelcontextprotocol/sdk": "^1.27.1",
-		"node-forge": "^1.3.3",
-		"obsidian": "latest",
 		"zod": "^4.3.6"
 	}
 }
