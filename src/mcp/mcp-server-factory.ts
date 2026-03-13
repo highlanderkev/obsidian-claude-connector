@@ -1,18 +1,20 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import * as fs from "node:fs/promises";
+import * as nodePath from "node:path";
 import { z } from "zod";
-import { TFile } from "obsidian";
-import type ClaudeConnectorPlugin from "../main";
-import { executeTool } from "./tools";
+import { executeTool, getMarkdownFiles } from "./tools.js";
 
 /**
- * Creates and returns a fully-configured McpServer for the given plugin instance.
- * Called once per incoming SSE connection so each client gets its own server+transport pair.
+ * Creates and returns a fully-configured McpServer for the given vault path.
+ * Called once per stdio connection; the server communicates over stdin/stdout.
  */
-export function createMcpServer(plugin: ClaudeConnectorPlugin): McpServer {
+export function createMcpServer(vaultPath: string): McpServer {
+	const resolvedVault = nodePath.resolve(vaultPath);
+
 	const server = new McpServer(
 		{
 			name: "obsidian-claude-connector",
-			version: plugin.manifest.version,
+			version: "1.0.0",
 		},
 		{
 			capabilities: {
@@ -42,7 +44,7 @@ export function createMcpServer(plugin: ClaudeConnectorPlugin): McpServer {
 					.describe("Maximum number of notes to return (default: 50)."),
 			},
 		},
-		(args) => executeTool("list_notes", args, plugin)
+		(args) => executeTool("list_notes", args, resolvedVault)
 	);
 
 	server.registerTool(
@@ -58,7 +60,7 @@ export function createMcpServer(plugin: ClaudeConnectorPlugin): McpServer {
 					),
 			},
 		},
-		(args) => executeTool("read_note", args, plugin)
+		(args) => executeTool("read_note", args, resolvedVault)
 	);
 
 	server.registerTool(
@@ -76,7 +78,7 @@ export function createMcpServer(plugin: ClaudeConnectorPlugin): McpServer {
 					),
 			},
 		},
-		(args) => executeTool("search_notes", args, plugin)
+		(args) => executeTool("search_notes", args, resolvedVault)
 	);
 
 	server.registerTool(
@@ -94,7 +96,7 @@ export function createMcpServer(plugin: ClaudeConnectorPlugin): McpServer {
 					.describe("Markdown content for the new note."),
 			},
 		},
-		(args) => executeTool("create_note", args, plugin)
+		(args) => executeTool("create_note", args, resolvedVault)
 	);
 
 	server.registerTool(
@@ -116,7 +118,7 @@ export function createMcpServer(plugin: ClaudeConnectorPlugin): McpServer {
 					),
 			},
 		},
-		(args) => executeTool("update_note", args, plugin)
+		(args) => executeTool("update_note", args, resolvedVault)
 	);
 
 	// ── Resources ────────────────────────────────────────────────────────────
@@ -124,26 +126,38 @@ export function createMcpServer(plugin: ClaudeConnectorPlugin): McpServer {
 	server.registerResource(
 		"vault-notes",
 		new ResourceTemplate("obsidian://note/{+path}", {
-			list: () => ({
-				resources: plugin.app.vault.getMarkdownFiles().map((f) => ({
-					uri: `obsidian://note/${encodeURIComponent(f.path)}`,
-					name: f.basename,
-					description: `Vault note: ${f.path}`,
-					mimeType: "text/markdown",
-				})),
-			}),
+			list: async () => {
+				const files = await getMarkdownFiles(resolvedVault);
+				return {
+					resources: files.map((f) => ({
+						uri: `obsidian://note/${encodeURIComponent(f)}`,
+						name: nodePath.basename(f, ".md"),
+						description: `Vault note: ${f}`,
+						mimeType: "text/markdown",
+					})),
+				};
+			},
 		}),
 		{ description: "Obsidian vault notes", mimeType: "text/markdown" },
 		async (uri) => {
 			const raw = uri.toString().replace(/^obsidian:\/\/note\//, "");
 			const filePath = decodeURIComponent(raw);
-			const abstract = plugin.app.vault.getAbstractFileByPath(filePath);
+			const fullPath = nodePath.resolve(resolvedVault, filePath);
 
-			if (!abstract || !(abstract instanceof TFile)) {
+			if (
+				fullPath !== resolvedVault &&
+				!fullPath.startsWith(resolvedVault + nodePath.sep)
+			) {
+				throw new Error(`Invalid path: ${filePath}`);
+			}
+
+			let content: string;
+			try {
+				content = await fs.readFile(fullPath, "utf8");
+			} catch {
 				throw new Error(`File not found: ${filePath}`);
 			}
 
-			const content = await plugin.app.vault.read(abstract);
 			return {
 				contents: [
 					{
