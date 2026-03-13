@@ -30,6 +30,7 @@ export default tseslint.config(
 	globalIgnores([
 		"node_modules",
 		"dist",
+		"main.js",
 		"eslint.config.mts",
 		"esbuild.config.mjs",
 		"eslint.config.js",
