@@ -2,7 +2,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import * as fs from "node:fs/promises";
 import * as nodePath from "node:path";
 import { z } from "zod";
-import { executeTool } from "./tools.js";
+import { executeTool, getMarkdownFiles } from "./tools.js";
 
 /**
  * Creates and returns a fully-configured McpServer for the given vault path.
@@ -127,28 +127,6 @@ export function createMcpServer(vaultPath: string): McpServer {
 		"vault-notes",
 		new ResourceTemplate("obsidian://note/{+path}", {
 			list: async () => {
-				const getMarkdownFiles = async (dir: string): Promise<string[]> => {
-					let entries;
-					try {
-						entries = await fs.readdir(dir, { withFileTypes: true });
-					} catch {
-						return [];
-					}
-					const files: string[] = [];
-					for (const entry of entries) {
-						if (entry.name.startsWith(".")) continue;
-						const fullPath = nodePath.join(dir, entry.name);
-						if (entry.isDirectory()) {
-							files.push(...await getMarkdownFiles(fullPath));
-						} else if (entry.name.endsWith(".md")) {
-							files.push(
-								nodePath.relative(resolvedVault, fullPath).replace(/\\/g, "/")
-							);
-						}
-					}
-					return files;
-				};
-
 				const files = await getMarkdownFiles(resolvedVault);
 				return {
 					resources: files.map((f) => ({

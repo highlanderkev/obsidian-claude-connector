@@ -30,7 +30,7 @@ function isInsideVault(resolvedVault: string, resolvedFull: string): boolean {
  * Recursively collects all `.md` file paths relative to `vaultPath`.
  * Hidden directories (names starting with ".") are skipped.
  */
-async function getMarkdownFiles(vaultPath: string, dir = vaultPath): Promise<string[]> {
+export async function getMarkdownFiles(vaultPath: string, dir = vaultPath): Promise<string[]> {
 	let entries;
 	try {
 		entries = await fs.readdir(dir, { withFileTypes: true });
