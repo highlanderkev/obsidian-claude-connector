@@ -2,7 +2,7 @@
 	"manifest_version": "0.3",
 	"name": "obsidian-claude-connector",
 	"display_name": "Obsidian Claude Connector",
-	"version": "1.0.0",
+	"version": "1.0.1",
 	"description": "Connect your Obsidian vault to Claude via Model Context Protocol (MCP). Reads and writes Markdown notes directly from your vault directory.",
 	"long_description": "Obsidian Claude Connector is a local MCP server that gives Claude access to your Obsidian vault. It exposes five vault tools — list notes, read a note, search notes, create a note, and update a note — letting Claude read and write Markdown files directly from the configured vault directory. No internet connection or Obsidian installation is required at runtime; the server reads files straight from the filesystem.",
 	"author": {
@@ -20,7 +20,9 @@
 		"entry_point": "server/index.js",
 		"mcp_config": {
 			"command": "node",
-			"args": ["${__dirname}/server/index.js"],
+			"args": [
+				"${__dirname}/server/index.js"
+			],
 			"env": {
 				"VAULT_PATH": "${user_config.vault_path}"
 			}
@@ -48,7 +50,13 @@
 			"description": "Overwrite, append to, or prepend content to an existing note."
 		}
 	],
-	"keywords": ["obsidian", "notes", "markdown", "vault", "knowledge-base"],
+	"keywords": [
+		"obsidian",
+		"notes",
+		"markdown",
+		"vault",
+		"knowledge-base"
+	],
 	"license": "0-BSD",
 	"user_config": {
 		"vault_path": {
@@ -60,7 +68,11 @@
 	},
 	"compatibility": {
 		"claude_desktop": ">=0.10.0",
-		"platforms": ["darwin", "win32", "linux"],
+		"platforms": [
+			"darwin",
+			"win32",
+			"linux"
+		],
 		"runtimes": {
 			"node": ">=18.0.0"
 		}

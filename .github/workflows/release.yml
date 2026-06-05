@@ -1,0 +1,74 @@
+name: Build and Release MCPB Bundle
+
+# Trigger by pushing (or merging into) a release branch named release/<semver>.
+# Example: release/1.0.1  →  publishes GitHub Release v1.0.1
+on:
+    push:
+        branches:
+            - "release/*"
+
+jobs:
+    release:
+        runs-on: ubuntu-latest
+
+        permissions:
+            contents: write
+
+        steps:
+            - uses: actions/checkout@v4
+
+            # Extract the semver string from the branch name.
+            # refs/heads/release/1.0.1  →  VERSION=1.0.1  TAG=v1.0.1
+            - name: Extract version from release branch
+              id: version
+              run: |
+                  VERSION="${GITHUB_REF_NAME#release/}"
+                  echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+                  echo "tag=v${VERSION}" >> "$GITHUB_OUTPUT"
+
+            - name: Use Node.js 20.x
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 20.x
+                  cache: "npm"
+
+            - name: Install dependencies
+              run: npm ci
+
+            # Update package.json and manifest.json to the release version.
+            # --no-git-tag-version skips git commit/tag creation but still
+            # runs the "version" lifecycle script (version-bump.mjs) which
+            # keeps manifest.json in sync.
+            # --allow-same-version makes this step idempotent when re-running
+            # on a branch that was already bumped.
+            - name: Bump version in package.json and manifest.json
+              run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
+            # Commit the version bump back to the release branch so the release
+            # tag references the correctly versioned source files.
+            # Only commits when the files actually changed (idempotent).
+            # [skip ci] prevents this push from re-triggering the workflow.
+            - name: Commit and push version bump
+              id: bump
+              run: |
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  if ! git diff --quiet package.json manifest.json; then
+                    git add package.json manifest.json
+                    git commit -m "chore: release ${{ steps.version.outputs.tag }} [skip ci]"
+                    git push origin "HEAD:${GITHUB_REF_NAME}"
+                  fi
+                  echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+            - name: Build and pack MCPB bundle
+              run: npm run pack
+
+            # target_commitish ensures the release tag is created at the
+            # version-bumped commit, not the original trigger commit.
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: "${{ steps.version.outputs.tag }}"
+                  target_commitish: "${{ steps.bump.outputs.sha }}"
+                  files: "obsidian-claude-connector.mcpb"
+                  generate_release_notes: true
