@@ -108,7 +108,7 @@ Modify the content of an existing note.
 
 * **URI Template:** `obsidian://note/{+path}`
 * **MIME Type:** `text/markdown`
-* Allows MCP clients to subscribe to or directly inspect any note in the vault as an MCP Resource.
+* Allows MCP clients to list and read vault notes as MCP resources. Resource subscriptions and change notifications are not supported.
 
 ---
 
@@ -145,7 +145,7 @@ When logging daily updates, research notes, or meeting logs:
 
 ### Safety & Sandboxing
 * All file paths must be vault-relative.
-* Directory traversal (e.g. `../` or absolute filesystem paths) is strictly blocked by the server.
+* The server rejects paths that resolve outside the vault before following symbolic links. Absolute paths inside the vault are accepted, and symbolic links can lead reads or writes outside it. Always use vault-relative paths and avoid links to external files or directories; do not rely on the server as a filesystem sandbox.
 * Hidden configuration directories like `.obsidian` are omitted from listings and searches to protect vault settings and caches.
 
 ---
