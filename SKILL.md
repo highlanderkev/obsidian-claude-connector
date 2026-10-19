@@ -45,7 +45,7 @@ The connector requires the `VAULT_PATH` environment variable pointing to the abs
 
 #### Antigravity / Claude Code / Stdio MCP Clients
 ```bash
-claude mcp add obsidian node /path/to/obsidian-claude-connector/server/index.js -e VAULT_PATH=/path/to/your/obsidian/vault
+claude mcp add --transport stdio --env VAULT_PATH=/path/to/your/obsidian/vault obsidian -- node /path/to/obsidian-claude-connector/server/index.js
 ```
 
 Alternatively, install the prebuilt `.mcpb` bundle directly via Claude Desktop:
